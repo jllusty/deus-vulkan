@@ -11,7 +11,8 @@
 
 namespace core::memory {
 
-// todo: metadata? AnnotatedMemoryRegion?
+// commitable regions of OS-managed memory
+// todo: RAII? metadata? AnnotatedMemoryRegion?
 struct OsArena {
     std::byte* pBase{ nullptr };
     std::size_t bytes;
@@ -19,13 +20,12 @@ struct OsArena {
 
 // Allocator for OS-Managed Address Spaces
 class OsArenaAllocator {
-private:
     std::size_t page_size { 0 };
 
     // query sysconf to get page size
-    std::size_t queryPageSize() {
-        int rc = ::sysconf(_SC_PAGESIZE);
-        if(page_size == -1) {
+    [[nodiscard]] std::size_t queryPageSize() const {
+        long rc = ::sysconf(_SC_PAGESIZE);
+        if(rc == -1) {
             // todo: handle error
             assert(false && "sysconf failure: cannot get pagesize");
         }
@@ -39,10 +39,10 @@ public:
     }
 
     // Condition: rounds requested number of bytes up to a multiple of page size
-    OsArena reserve(std::size_t bytes) const {
+    [[nodiscard]] OsArena reserve(std::size_t bytesRequested) const {
         // round up to next page boundary
-        const auto& ps = page_size;
-        const std::size_t bytesRounded = (bytes + ps - 1) & ~(ps - 1);
+        const std::size_t ps = page_size;
+        const std::size_t bytesRounded = (bytesRequested + ps - 1) & ~(ps - 1);
         void* pBase = ::mmap(
             nullptr,                        // void addr[]
             bytesRounded,                   // size_t length
@@ -63,7 +63,7 @@ public:
 
     void release(OsArena arena) const {
         if(arena.pBase != nullptr) {
-            ::munmap(arena.pBase, arena.bytes);
+            ::munmap(static_cast<void*>(arena.pBase), arena.bytes);
         }
         else {
             // todo: handle this

@@ -1,19 +1,21 @@
 // main.cpp
 #include <cstddef>
 #include <iostream>
+#include <vector>
 
 #include <vulkan/vulkan.h>
 #include <SFML/Window.hpp>
 
-#include "core/memory/os_memory.hpp"
+#include "core/memory/base_allocator.hpp"
+#include "core/memory/arena_allocator.hpp"
 #include "core/types.hpp"
 
 
 int main()
 {
     // Application Info: Describes the application
-    static core::u32 vulkanApiVersion = VK_MAKE_API_VERSION(0,1,0,0);
-    static const VkApplicationInfo applicationInfo {
+    core::u32 vulkanApiVersion = VK_MAKE_API_VERSION(0,1,0,0);
+    const VkApplicationInfo applicationInfo {
         VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,     // sType
         nullptr,                                    // pNext
         "VulkanApplication",                        // pApplicationName
@@ -25,16 +27,16 @@ int main()
 
     // vulkan instance create info
     // Layers: []
-    static const core::u32 numLayers{ 0 };
-    static const char* const* ppLayerNames { nullptr };
+    const core::u32 numLayers{ 0 };
+    const char* const* ppLayerNames { nullptr };
     // Extensions: [VK_KHR_portability_enumeration]
     //
     // 1. VK_KHR_portability_enumeration: used for Mac OS X development environment.
     // -> enumerate available Vulkan Portability-compliant physical devices and groups
     // in addition to the Vulkan physical devices and groups that are enumerated by default.
-    static const core::u32 numExtensions{ 1 };
-    static const char* const ppExtensionNames[] { VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME };
-    static const VkInstanceCreateInfo createInfo {
+    const core::u32 numExtensions{ 1 };
+    const char* const ppExtensionNames[] { VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME };
+    const VkInstanceCreateInfo createInfo {
         VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,             // sType
         nullptr,                                            // pNext
         VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR,   // flags
@@ -48,7 +50,7 @@ int main()
     // Create Vulkan Instance
     const VkAllocationCallbacks* pHostMemoryAllocator = nullptr; // use Vulkan's internal allocator
     VkInstance vulkanInstance;
-    static VkResult instanceCreationResult = vkCreateInstance(
+    VkResult instanceCreationResult = vkCreateInstance(
         &createInfo,
         pHostMemoryAllocator,
         &vulkanInstance
@@ -56,15 +58,74 @@ int main()
 
     std::cout << "[vulkan]: vkcreateInstance result: " << instanceCreationResult << "\n";
 
-    core::u32 numPhysicalDevices{};
-    static VkResult enumeratePhysicalDevicesResult = vkEnumeratePhysicalDevices(
+    // enumerate our physical devices
+    //
+    // the first call just queries the number of physical devices so we
+    // can reserve that space on our side.
+    //
+    // the second call retries that many VkPhysicalDevices
+    core::u32 numPhysicalDevices{ 0 };
+    VkPhysicalDevice pPhysicalDevices{ nullptr };
+    VkResult enumeratePhysicalDevicesResult = vkEnumeratePhysicalDevices(
         vulkanInstance,
         &numPhysicalDevices,
         nullptr
     );
 
+    if(enumeratePhysicalDevicesResult != VK_SUCCESS) {
+        assert(false && "[vulkan]: could not enumerate physical devices");
+    }
+
     std::cout << "[vulkan]: physical devices result: " << enumeratePhysicalDevicesResult << "\n";
     std::cout << "[vulkan]: physical devices: " << numPhysicalDevices << "\n";
+
+    // just use STL allocators for now while we build up core's memory capabilities
+    constexpr const std::size_t maxNumPhysicalDevices = 8;
+    std::vector<VkPhysicalDevice> physicalDevices{ maxNumPhysicalDevices };
+
+    enumeratePhysicalDevicesResult = vkEnumeratePhysicalDevices(
+        vulkanInstance,
+        &numPhysicalDevices,
+        &physicalDevices[0]
+    );
+
+    if(enumeratePhysicalDevicesResult != VK_SUCCESS) {
+        assert(false && "[vulkan]: could not enumerate physical devices");
+    }
+
+    // get physical device properties with the VkPhysicalDevice handles
+    std::vector<VkPhysicalDeviceProperties> physicalDeviceProperties{ maxNumPhysicalDevices };
+    std::vector<VkPhysicalDeviceFeatures> physicalDeviceFeatures{ maxNumPhysicalDevices };
+    std::vector<VkPhysicalDeviceMemoryProperties> physicalDeviceMemoryProperties{ maxNumPhysicalDevices };
+    for(std::size_t i = 0; i < numPhysicalDevices; ++i) {
+        vkGetPhysicalDeviceProperties(
+            physicalDevices[i],
+            &physicalDeviceProperties[i]
+        );
+        vkGetPhysicalDeviceFeatures(
+            physicalDevices[i],
+            &physicalDeviceFeatures[i]
+        );
+        vkGetPhysicalDeviceMemoryProperties(
+            physicalDevices[i],
+            &physicalDeviceMemoryProperties[i]
+        );
+
+        constexpr std::size_t maxNumFamilyProperties{ 32 };
+        std::vector<VkQueueFamilyProperties> queueFamilyProperties{ maxNumFamilyProperties };
+        core::u32 numQueueFamilyProperties{ 0 };
+        vkGetPhysicalDeviceQueueFamilyProperties(
+            physicalDevices[i],
+            &numQueueFamilyProperties,
+            nullptr
+        );
+
+        vkGetPhysicalDeviceQueueFamilyProperties(
+            physicalDevices[i],
+            &numQueueFamilyProperties,
+            &queueFamilyProperties[0]
+        );
+    }
 
     // SFML Windowing Context
     //sf::Window window(sf::VideoMode({800u,600u}), "Hi Chris\n");
@@ -81,17 +142,34 @@ int main()
     //    window.display();
     //}
 
-    // Core - OS Allocator
-    core::memory::OsArenaAllocator osAllocator{};
+    // ArenaAllocator Use: Subsystem-level Memory Management
+    {
+        // top level: reserve 4 MB from the OS
+        core::memory::BaseAllocator baseAllocator(4 * 1024 * 1024);
 
-    core::memory::OsArena mem1 = osAllocator.reserve(1);
+        // subsystem call: create a memory region with the right size from the shared base allocator
+        core::memory::MemoryRegion vulkanPhysicalDevicePropertiesRegion = baseAllocator.reserve(
+            sizeof(VkPhysicalDeviceProperties) * numPhysicalDevices
+        );
+        std::size_t regionSize = vulkanPhysicalDevicePropertiesRegion.size();
 
-    *mem1.pBase = std::byte{1};
+        std::cout << "created a memory region with size: " << regionSize << "\n";
 
-    core::memory::OsArena mem2 = osAllocator.reserve(1);
+        core::memory::ArenaAllocator<VkPhysicalDeviceProperties> physicalDeviceProperties(
+            vulkanPhysicalDevicePropertiesRegion
+        );
 
-    osAllocator.release(mem2);
-    osAllocator.release(mem1);
+        VkPhysicalDeviceProperties* pProps = physicalDeviceProperties.allocate(numPhysicalDevices);
+
+        for(core::u32 i = 0; i < numPhysicalDevices; ++i) {
+            vkGetPhysicalDeviceProperties(
+                physicalDevices[i],
+                pProps + i
+            );
+
+            std::cout << "found device: '" << (pProps + i)->deviceName << "'\n";
+        }
+    }
 
     return 0;
 }
