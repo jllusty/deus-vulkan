@@ -7,8 +7,10 @@
 #include <SFML/Window.hpp>
 
 #include "core/memory/base_allocator.hpp"
-#include "core/memory/arena_allocator.hpp"
+#include "core/memory/types.hpp"
 #include "core/types.hpp"
+
+#include "gfx/vulkan/device_explorer.hpp"
 
 
 int main()
@@ -111,6 +113,7 @@ int main()
             &physicalDeviceMemoryProperties[i]
         );
 
+        // queues for workloads distributed across the device
         constexpr std::size_t maxNumFamilyProperties{ 32 };
         std::vector<VkQueueFamilyProperties> queueFamilyProperties{ maxNumFamilyProperties };
         core::u32 numQueueFamilyProperties{ 0 };
@@ -125,6 +128,48 @@ int main()
             &numQueueFamilyProperties,
             &queueFamilyProperties[0]
         );
+
+        std::cout << "there are " << numQueueFamilyProperties << " queues on the physical device\n";
+
+        VkDeviceQueueCreateInfo deviceQueueCreateInfo {
+            VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+            nullptr,
+            0,
+            0,
+            queueFamilyProperties[0].queueCount,
+            nullptr
+        };
+
+        // we can differentiate between optional and required
+        // features of the physical device by our call to createInfo
+        VkPhysicalDeviceFeatures requiredFeatures{};
+        requiredFeatures.tessellationShader = VK_TRUE;
+
+        VkDeviceCreateInfo createInfo {
+            VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+            nullptr,
+            0,
+            1,
+            &deviceQueueCreateInfo,
+            0,
+            nullptr,
+            numExtensions,
+            ppExtensionNames,
+            &requiredFeatures
+        };
+
+        VkDevice device{};
+        VkResult res = vkCreateDevice(
+            physicalDevices[i],
+            &createInfo,
+            nullptr,
+            &device
+        );
+
+        if(res != VK_SUCCESS) {
+            // todo: handle this
+            //assert(false && "vulkan: could not create logical device");
+        }
     }
 
     // SFML Windowing Context
@@ -148,27 +193,8 @@ int main()
         core::memory::BaseAllocator baseAllocator(4 * 1024 * 1024);
 
         // subsystem call: create a memory region with the right size from the shared base allocator
-        core::memory::MemoryRegion vulkanPhysicalDevicePropertiesRegion = baseAllocator.reserve(
-            sizeof(VkPhysicalDeviceProperties) * numPhysicalDevices
-        );
-        std::size_t regionSize = vulkanPhysicalDevicePropertiesRegion.size();
-
-        std::cout << "created a memory region with size: " << regionSize << "\n";
-
-        core::memory::ArenaAllocator<VkPhysicalDeviceProperties> physicalDeviceProperties(
-            vulkanPhysicalDevicePropertiesRegion
-        );
-
-        VkPhysicalDeviceProperties* pProps = physicalDeviceProperties.allocate(numPhysicalDevices);
-
-        for(core::u32 i = 0; i < numPhysicalDevices; ++i) {
-            vkGetPhysicalDeviceProperties(
-                physicalDevices[i],
-                pProps + i
-            );
-
-            std::cout << "found device: '" << (pProps + i)->deviceName << "'\n";
-        }
+        core::memory::MemoryRegion region = baseAllocator.reserve(1024 * 1024);
+        gfx::vulkan::PhysicalDeviceEnumerator(vulkanInstance, region);
     }
 
     return 0;
