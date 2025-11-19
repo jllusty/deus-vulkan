@@ -4,17 +4,18 @@
 
 #include <cassert>
 
+#include "core/memory/stack_allocator.hpp"
 #include "core/types.hpp"
 #include "core/memory/types.hpp"
 
-#include "core/memory/heap_allocator.hpp"
+#include "core/memory/stack_allocator.hpp"
 
 #include <vulkan/vulkan.h>
 
 namespace gfx::vulkan {
 
 class PhysicalDeviceEnumerator {
-    core::memory::HeapAllocator allocator;
+    core::memory::StackAllocator allocator;
 
     VkPhysicalDevice* pPhysicalDevices{ nullptr };
 
