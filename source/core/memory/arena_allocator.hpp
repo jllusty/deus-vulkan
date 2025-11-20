@@ -4,16 +4,16 @@
 
 namespace core::memory {
 
-// bump allocator for fixed size
+// bump allocator for fixed type
 template<typename T>
 class ArenaAllocator {
-    MemoryRegion region{ nullptr, nullptr };
+    Region region{};
     std::size_t offset{ 0 };
 
 public:
     ArenaAllocator() = delete;
 
-    ArenaAllocator(MemoryRegion region)
+    ArenaAllocator(Region region)
         : region(region)
     {}
 
@@ -26,10 +26,10 @@ public:
         const std::size_t current = offset;
         offset += 1;
 
-        return reinterpret_cast<T*>(region.pStart + current);
+        return reinterpret_cast<T*>(region.data() + current);
     }
 
-    [[nodiscard]] T* allocate(std::size_t elements) {
+    [[nodiscard]] std::span<T> allocate(std::size_t elements) {
         if(offset + elements > region.size()) {
             // todo: log this
             return nullptr;
@@ -37,7 +37,10 @@ public:
         const std::size_t current = offset;
         offset += elements;
 
-        return reinterpret_cast<T*>(region.pStart + current);
+        return std::span<T>(
+            reinterpret_cast<T*>(region.data() + current),
+            elements
+        );
     }
 
     // note: clears all data in the allocator

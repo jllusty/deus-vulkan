@@ -5,26 +5,23 @@
 #include <cassert>
 #include <cstddef>
 
+#include <span>
+
 // posix
 #include <sys/mman.h>
 #include <unistd.h>
 
-namespace core::memory {
+namespace core::memory::os {
 
-// commitable regions of OS-managed memory
-// todo: RAII? metadata? AnnotatedMemoryRegion?
-struct OsArena {
-    std::byte* pBase{ nullptr };
-    std::size_t bytes;
-};
+// read/write span
+using OsAddressSpace = std::span<std::byte>;
 
-// Allocator for OS-Managed Address Spaces
-class OsArenaAllocator {
+class OsAddressSpaceAllocator {
     std::size_t page_size { 0 };
 
     // query sysconf to get page size
     [[nodiscard]] std::size_t queryPageSize() const {
-        long rc = ::sysconf(_SC_PAGESIZE);
+        const long rc = ::sysconf(_SC_PAGESIZE);
         if(rc == -1) {
             // todo: handle error
             assert(false && "sysconf failure: cannot get pagesize");
@@ -34,12 +31,12 @@ class OsArenaAllocator {
     }
 
 public:
-    OsArenaAllocator() {
-        page_size = queryPageSize();
-    }
+    OsAddressSpaceAllocator()
+        : page_size(queryPageSize())
+    {}
 
     // Condition: rounds requested number of bytes up to a multiple of page size
-    [[nodiscard]] OsArena reserve(std::size_t bytesRequested) const {
+    [[nodiscard]] OsAddressSpace reserve(std::size_t bytesRequested) const {
         // round up to next page boundary
         const std::size_t ps = page_size;
         const std::size_t bytesRounded = (bytesRequested + ps - 1) & ~(ps - 1);
@@ -58,15 +55,16 @@ public:
             assert(false && "mmap failed in os_reserve_memory");
         }
 
-        return {static_cast<std::byte*>(pBase), bytesRounded};
+        return std::span<std::byte>(static_cast<std::byte*>(pBase), bytesRounded);
     }
 
-    void release(OsArena arena) const {
-        if(arena.pBase != nullptr) {
-            ::munmap(static_cast<void*>(arena.pBase), arena.bytes);
+    void release(OsAddressSpace addressSpace) const {
+        if(addressSpace.data() != nullptr) {
+            ::munmap(static_cast<void*>(addressSpace.data()), addressSpace.size());
         }
         else {
             // todo: handle this
+            assert(false && "attempt to free nullptr");
         }
     }
 };
