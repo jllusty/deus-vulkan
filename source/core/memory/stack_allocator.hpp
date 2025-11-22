@@ -31,7 +31,7 @@ public:
         // containment check
         if(offset + sizeof(T) > region.size()) {
             if(pLogger != nullptr) {
-                pLogger->log(log::error("[core/memory/stack_allocator]: out of capacity!"));
+                pLogger->log<log::Level::error>("[core/memory/stack_allocator]: out of capacity!");
             }
             return nullptr;
         }
@@ -45,7 +45,7 @@ public:
     [[nodiscard]] std::span<T> allocate(std::size_t elements) noexcept {
         if(offset + elements * sizeof(T) > region.size()) {
             if(pLogger != nullptr) {
-                pLogger->log(log::error("[core/memory/stack_allocator]: out of capacity!"));
+                pLogger->log<log::Level::error>("[core/memory/stack_allocator]: out of capacity!");
             }
             assert(false && "cannot reserve enough space");
         }

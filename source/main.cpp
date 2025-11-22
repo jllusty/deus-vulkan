@@ -5,6 +5,7 @@
 #include <sys/wait.h>
 #include <vulkan/vulkan.h>
 #include <SFML/Window.hpp>
+#include <vulkan/vulkan_core.h>
 
 #include "core/types.hpp"
 #include "core/memory/base_allocator.hpp"
@@ -15,51 +16,6 @@
 
 int main()
 {
-    // Application Info: Describes the application
-    core::u32 vulkanApiVersion = VK_MAKE_API_VERSION(0,1,0,0);
-    const VkApplicationInfo applicationInfo {
-        VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,     // sType
-        nullptr,                                    // pNext
-        "VulkanApplication",                        // pApplicationName
-        0,                                          // applicationVersion
-        "Deus-Vulkan",                              // pEngineName
-        0,                                          // engineVersion
-        vulkanApiVersion                            // apiVersion
-    };
-
-    // vulkan instance create info
-    // Layers: []
-    const core::u32 numLayers{ 0 };
-    const char* const* ppLayerNames { nullptr };
-    // Extensions: [VK_KHR_portability_enumeration]
-    //
-    // 1. VK_KHR_portability_enumeration: used for Mac OS X development environment.
-    // -> enumerate available Vulkan Portability-compliant physical devices and groups
-    // in addition to the Vulkan physical devices and groups that are enumerated by default.
-    const core::u32 numExtensions{ 1 };
-    const char* const ppExtensionNames[] { VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME };
-    const VkInstanceCreateInfo createInfo {
-        VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,             // sType
-        nullptr,                                            // pNext
-        VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR,   // flags
-        &applicationInfo,                                   // pApplicationInfo
-        numLayers,                                          // enabledLayerCount
-        ppLayerNames,                                       // ppEnabledLayerNames
-        numExtensions,                                      // enabledExtensionCount
-        ppExtensionNames                                    // ppEnabledExtensionNames
-    };
-
-    // Create Vulkan Instance
-    const VkAllocationCallbacks* pHostMemoryAllocator = nullptr; // use Vulkan's internal allocator
-    VkInstance vulkanInstance;
-    VkResult instanceCreationResult = vkCreateInstance(
-        &createInfo,
-        pHostMemoryAllocator,
-        &vulkanInstance
-    );
-
-    std::cout << "[vulkan]: vkcreateInstance result: " << instanceCreationResult << "\n";
-
     // ArenaAllocator Use: Subsystem-level Memory Management
     // top level: reserve 4 MB from the OS
     core::memory::BaseAllocator baseAllocator(4 * 1024 * 1024);
@@ -70,24 +26,24 @@ int main()
 
     // Logging
     core::log::Logger logger(regionLog);
-
-    gfx::vulkan::Configurator enumerator(regionVulkanConfig);
     core::log::Logger* pLogger = &logger;
 
-    pLogger->log(core::log::debug("I have issues"));
-    pLogger->log(core::log::error("[core/memory/stack_allocator]: out of capacity"));
+    gfx::vulkan::Configurator config(regionVulkanConfig, pLogger);
 
-    enumerator.setInstance(vulkanInstance);
+    // instance-level vulkan api
+    auto apiVersion = config.getAvailableInstanceVersion();
+    if(!apiVersion) {
+        pLogger->log<core::log::Level::error>("[main]: could not retrieve vulkan api version");
+    }
+    else {
+        pLogger->log<core::log::Level::error>("[main]: ");
+    }
 
-    enumerator.enumeratePhysicalDevicesAndQueues();
+    // available instance-level layers and extensions
+    std::span<const VkLayerProperties> layerProps = config.getAvailableInstanceLayerProperties();
+    std::span<const VkExtensionProperties> extensionProps = config.getAvailableInstanceExtensionProperties();
 
-    std::size_t numPhysicalDevices = enumerator.getNumPhysicalDevices();
-
-    // for now, just pick the first available device
-    VkPhysicalDevice physicalDevice = enumerator.getBestPhysicalDevice();
-
-    std::span<const VkQueueFamilyProperties> queueFamilyProps = enumerator.getQueueFamilyProperties(physicalDevice);
-
+    /*
     float priority = 1.0f;
 
     VkDeviceQueueCreateInfo deviceQueueCreateInfo {
@@ -185,11 +141,30 @@ int main()
         &pCount,
         deviceExtensionProps.data()
     );
+    */
 
-    PFN_vkVoidFunction instanceProcAddr = vkGetInstanceProcAddr(
-        vulkanInstance,
-        ""
+    // destroy vulkan logical device(s)
+
+    /*
+    logger.log(core::log::debug("[main]: waiting until logical device is idle..."));
+    result = vkDeviceWaitIdle(
+        logicalDevice
     );
+    logger.log(core::log::debug("[main]: logical device is idle, destroying..."));
+    vkDestroyDevice(
+        logicalDevice,
+        nullptr
+    );
+    logger.log(core::log::debug("[main]: logical device destroyed"));
+
+    // destory vulkan instance
+    logger.log(core::log::debug("[main]: destroying vulkan instance..."));
+    vkDestroyInstance(
+        vulkanInstance,
+        nullptr
+    );
+    logger.log(core::log::debug("[main]: vulkan instance destroyed"));
+    */
 
     return 0;
 }

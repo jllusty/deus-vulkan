@@ -39,49 +39,6 @@ struct Log {
 };
 
 // log factories
-template<Level L>
-inline const Log create(const char* message) noexcept {
-}
-
-inline const Log debug(const char* message) noexcept {
-    Log log;
-    log.timestamp = time::getTimestamp();
-    log.level = Level::debug;
-    std::snprintf(
-        log.message.data(),
-        log.message.size(),
-        "%s",
-        message
-    );
-    return log;
-}
-
-inline const Log error(const char* message) noexcept {
-    Log log;
-    log.timestamp = time::getTimestamp();
-    log.level = Level::error;
-    std::snprintf(
-        log.message.data(),
-        log.message.size(),
-        "%s",
-        message
-    );
-    return log;
-}
-
-inline const Log info(const char* message) noexcept {
-    Log log;
-    log.timestamp = time::getTimestamp();
-    log.level = Level::info;
-    std::snprintf(
-        log.message.data(),
-        log.message.size(),
-        "%s",
-        message
-    );
-    return log;
-}
-
 class Logger {
     // write buffer
     // we use the core region memory type so that we can use it
@@ -99,7 +56,7 @@ public:
     }
 
     template<Level L>
-    void log(const char * message) {
+    void log(const char * message) noexcept {
         Log log;
         log.timestamp = time::getTimestamp();
 
@@ -126,7 +83,7 @@ public:
         return;
     }
 
-    void write(const Log& log) {
+    void write(const Log& log) noexcept {
         // todo: async pull
         const time::MSMTime msm = time::getMSM(log.timestamp);
         int res = snprintf(
@@ -137,6 +94,7 @@ public:
                     msm.minutes, msm.seconds, msm.millis,
                     log.message.data()
         );
+        // this doesn't throw unless we enable it in the stream
         std::cout << buffer.data() << "\n";
     }
 };
