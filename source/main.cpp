@@ -1,17 +1,17 @@
 // main.cpp
 #include <cstddef>
 #include <iostream>
-#include <vector>
 
+#include <sys/wait.h>
 #include <vulkan/vulkan.h>
 #include <SFML/Window.hpp>
 
+#include "core/types.hpp"
 #include "core/memory/base_allocator.hpp"
 #include "core/memory/types.hpp"
-#include "core/types.hpp"
+#include "core/log/logging.hpp"
 
-#include "gfx/vulkan/device_explorer.hpp"
-
+#include "gfx/vulkan/config.hpp"
 
 int main()
 {
@@ -65,8 +65,21 @@ int main()
     core::memory::BaseAllocator baseAllocator(4 * 1024 * 1024);
 
     // subsystem call: create a memory region with the right size from the shared base allocator
-    core::memory::Region region = baseAllocator.reserve(1024 * 1024);
-    gfx::vulkan::PhysicalDeviceEnumerator enumerator(vulkanInstance, region);
+    core::memory::Region regionLog = baseAllocator.reserve(1024 * 1024);
+    core::memory::Region regionVulkanConfig = baseAllocator.reserve(1024 * 1024);
+
+    // Logging
+    core::log::Logger logger(regionLog);
+
+    gfx::vulkan::Configurator enumerator(regionVulkanConfig);
+    core::log::Logger* pLogger = &logger;
+
+    pLogger->log(core::log::debug("I have issues"));
+    pLogger->log(core::log::error("[core/memory/stack_allocator]: out of capacity"));
+
+    enumerator.setInstance(vulkanInstance);
+
+    enumerator.enumeratePhysicalDevicesAndQueues();
 
     std::size_t numPhysicalDevices = enumerator.getNumPhysicalDevices();
 
@@ -111,8 +124,72 @@ int main()
     );
 
     if(result != VK_SUCCESS) {
-        std::cout << "old shit\n";
+        std::cout << "failed to create logical device\n";
     }
+
+    // layers
+    core::u32 propertyCount{ 0 };
+    result = vkEnumerateInstanceLayerProperties(
+        &propertyCount,
+        nullptr //&layerProperties
+    );
+
+    std::vector<VkLayerProperties> layerProperties(propertyCount);
+
+    result = vkEnumerateInstanceLayerProperties(
+        &propertyCount,
+        layerProperties.data()
+    );
+
+    core::u32 numDeviceLayerProperties{ 0 };
+    result = vkEnumerateDeviceLayerProperties(
+        physicalDevice,
+        &numDeviceLayerProperties,
+        nullptr
+    );
+
+    layerProperties.resize(numDeviceLayerProperties);
+    result = vkEnumerateDeviceLayerProperties(
+        physicalDevice,
+        &numDeviceLayerProperties,
+        layerProperties.data()
+    );
+
+    core::u32 pCount{ 0 };
+    std::vector<VkExtensionProperties> instanceExtensionProps;
+    result = vkEnumerateInstanceExtensionProperties(
+        nullptr,
+        &pCount,
+        nullptr
+    );
+
+    instanceExtensionProps.resize(pCount);
+    result = vkEnumerateInstanceExtensionProperties(
+        nullptr,
+        &pCount,
+        instanceExtensionProps.data()
+    );
+
+    std::vector<VkExtensionProperties> deviceExtensionProps;
+    result = vkEnumerateDeviceExtensionProperties(
+        physicalDevice,
+        nullptr,
+        &pCount,
+        nullptr
+    );
+
+    deviceExtensionProps.resize(pCount);
+    result = vkEnumerateDeviceExtensionProperties(
+        physicalDevice,
+        nullptr,
+        &pCount,
+        deviceExtensionProps.data()
+    );
+
+    PFN_vkVoidFunction instanceProcAddr = vkGetInstanceProcAddr(
+        vulkanInstance,
+        ""
+    );
 
     return 0;
 }
