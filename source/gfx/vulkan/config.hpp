@@ -53,7 +53,6 @@ public:
         // todo: custom vulkan allocator, inject pLogger calls
     }
 
-    // note that we do not return optional here
     // there is no way in vulkan 1.0 to even ask if 1.0 is supported
     // we just have to infer based on the lack of vkEnumerateInstanceVersion
     // which was introduced in 1.0
@@ -71,7 +70,7 @@ public:
                 (vkEnumerateInstanceVersionPtr)(&version);
 
             if(result != VK_SUCCESS) {
-                logError("[vulkan/configurator]: could not retrieve vulkan version >= 1.1");
+                logError("could not retrieve vulkan version >= 1.1");
                 return std::nullopt;
             }
 
@@ -96,7 +95,7 @@ public:
         );
 
         if(result != VK_SUCCESS || numLayers == 0) {
-            logError("[vulkan/configurator]: could not get any available instance layers");
+            logError("could not get any available instance layers");
             return {};
         }
 
@@ -108,7 +107,7 @@ public:
         );
 
         if(result != VK_SUCCESS || instanceAvailableLayers.empty()) {
-            logError("[vulkan/configurator]: could not get any available instance layers");
+            logError("could not get any available instance layers");
         }
 
         return instanceAvailableLayers;
@@ -127,7 +126,7 @@ public:
         );
 
         if(result != VK_SUCCESS || numExtensions == 0) {
-            logError("[vulkan/configurator]: could not get any available instance extensions");
+            logError("could not get any available instance extensions");
             return {};
         }
 
@@ -140,7 +139,7 @@ public:
         );
 
         if(result != VK_SUCCESS || instanceAvailableLayers.empty()) {
-            logError("[vulkan/configurator]: could not get any available instance layers");
+            logError("could not get any available instance layers");
         }
 
         return instanceAvailableExtensions;
@@ -166,7 +165,7 @@ public:
         core::u32 flags{ 0 };
         if(std::ranges::find(extensionNames, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME) != layerNames.end()) {
             flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
-            logInfo("[vulkan/configurator]: extension VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME requested for new instance");
+            logInfo("extension VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME requested for new instance");
         }
 
         // Layers: []
@@ -195,36 +194,42 @@ public:
         );
 
         if(res != VK_SUCCESS) {
-            logError("[vulkan/configurator]: could not create vulkan instance");
+            logError("could not create vulkan instance");
             return std::nullopt;
         }
 
-        logInfo("[vulkan/configurator]: created instance");
+        logInfo("created instance");
         instance = vulkanInstance;
         return instance;
     }
 
     // return true if succeeds, false if failure
     [[nodiscard]] const bool destroyInstance() noexcept {
-        if(instance.has_value()) {
-            if(!devices.empty()) {
-                logError("attempt to destroy instance while references to logical devices exist");
-            }
-
-            vkDestroyInstance(*instance, nullptr);
-            return true;
+        if(!instance.has_value()) {
+            logError("attempt to destroy non-existent instance");
+            return false;
         }
 
-        logError("attempt to destroy non-existent instance");
-        return false;
+        if(!devices.empty()) {
+            logError("attempt to destroy instance while references to logical devices exist");
+            return false;
+        }
+
+        vkDestroyInstance(*instance, nullptr);
+        logInfo("destroyed instance");
+        return true;
     }
 
     std::span<const VkPhysicalDevice> enumeratePhysicalDevices() {
+        if(!instance.has_value()) {
+            logError("cannot enumerate physical devices without an instance");
+            return {};
+        }
+
         // enumerate physical devices
         core::u32 numPhysicalDevices = 0;
-        VkInstance inst = *instance;
         VkResult enumeratePhysicalDevicesResult = vkEnumeratePhysicalDevices(
-            inst,
+            *instance,
             &numPhysicalDevices,
             nullptr
         );
@@ -256,9 +261,31 @@ public:
             logError("no physical devices found");
         }
 
+        logInfo("enumerated %d physical devices");
         return physicalDevices;
+    }
 
-        // std::cout << "[vulkan/device_explorer]: found " << numPhysicalDevices << " physical devices\n";
+    std::span<const VkPhysicalDeviceProperties> enumeratePhysicalDeviceProperties() noexcept {
+        if(physicalDevices.empty()) {
+            logError("cannot enumerate physical device properties without enumerating physical devices");
+            return {};
+        }
+
+        // get physical device properties
+        physicalDeviceProps = allocator.allocate<VkPhysicalDeviceProperties>(physicalDevices.size());
+        for(std::size_t deviceIndex = 0; deviceIndex < physicalDevices.size(); ++deviceIndex) {
+            const VkPhysicalDevice& physicalDevice = physicalDevices[deviceIndex];
+
+            vkGetPhysicalDeviceProperties(
+                physicalDevice,
+                &physicalDeviceProps[deviceIndex]
+            );
+
+            if(physicalDeviceProps.empty()) {
+                logError("could not retrieve physical device properties for a physical device");
+            }
+        }
+        return physicalDeviceProps;
     }
 
     void enumeratePhysicalDevicesAndQueues() {
@@ -338,13 +365,13 @@ private:
 
     void logDebug(const char* msg) {
         if(pLogger != nullptr) {
-            pLogger->error("[%s]: %s", "vulkan/configurator", msg);
+            pLogger->debug("[%s]: %s", "vulkan/configurator", msg);
         }
     }
 
     void logInfo(const char* msg) {
         if(pLogger != nullptr) {
-            pLogger->error("[%s]: %s", "vulkan/configurator", msg);
+            pLogger->info("[%s]: %s", "vulkan/configurator", msg);
         }
     }
 
@@ -363,32 +390,6 @@ private:
             return std::nullopt;
         }
         return offset;
-    }
-
-    void enumeratePhysicalDeviceProperties() {
-        // get physical device properties
-        physicalDeviceProps = allocator.allocate<VkPhysicalDeviceProperties>(physicalDevices.size());
-        for(std::size_t deviceIndex = 0; deviceIndex < physicalDevices.size(); ++deviceIndex) {
-            const VkPhysicalDevice& physicalDevice = physicalDevices[deviceIndex];
-
-            vkGetPhysicalDeviceProperties(
-                physicalDevice,
-                &physicalDeviceProps[deviceIndex]
-            );
-
-            const VkPhysicalDeviceProperties& props = physicalDeviceProps[deviceIndex];
-
-            core::u32 major = VK_API_VERSION_MAJOR(props.apiVersion);
-            core::u32 minor = VK_API_VERSION_MINOR(props.apiVersion);
-
-            // todo: log more attr
-            std::cout << "[vulkan/device_explorer]: got device properties: " <<
-                "\n\tdeviceName: " << props.deviceName <<
-                "\n\tapiVersion: " << major << "." << minor <<
-                "\n\tdeviceID: " << props.deviceID <<
-                "\n\tdeviceType: " << props.deviceType <<
-                "\n\tdriverVersion: " << props.driverVersion << "\n";
-        }
     }
 
     void enumeratePhysicalDeviceMemoryProperties() {

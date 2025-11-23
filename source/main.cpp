@@ -66,6 +66,8 @@ int main()
 
     std::span<const VkPhysicalDevice> physicalDevices = config.enumeratePhysicalDevices();
 
+    std::span<const VkPhysicalDeviceProperties> deviceProps = config.enumeratePhysicalDeviceProperties();
+
     bool destroyInstance = config.destroyInstance();
 
     // available device-level extensions
