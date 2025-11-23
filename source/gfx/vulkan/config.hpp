@@ -219,6 +219,48 @@ public:
         return false;
     }
 
+    std::span<const VkPhysicalDevice> enumeratePhysicalDevices() {
+        // enumerate physical devices
+        core::u32 numPhysicalDevices = 0;
+        VkInstance inst = *instance;
+        VkResult enumeratePhysicalDevicesResult = vkEnumeratePhysicalDevices(
+            inst,
+            &numPhysicalDevices,
+            nullptr
+        );
+
+        if(enumeratePhysicalDevicesResult != VK_SUCCESS) {
+            logError("could not enumerate physical devices for configured instance");
+            return {};
+        }
+        if(numPhysicalDevices == 0) {
+            // todo: log this
+            logError("no physical devices found");
+            return {};
+        }
+
+        physicalDevices = allocator.allocate<VkPhysicalDevice>(numPhysicalDevices);
+
+        enumeratePhysicalDevicesResult = vkEnumeratePhysicalDevices(
+            *instance,
+            &numPhysicalDevices,
+            physicalDevices.data()
+        );
+
+        if(enumeratePhysicalDevicesResult != VK_SUCCESS) {
+            // todo: log this
+            logError("could not enumerate physical devices for configured instance");
+            return {};
+        }
+        if(physicalDevices.empty()) {
+            logError("no physical devices found");
+        }
+
+        return physicalDevices;
+
+        // std::cout << "[vulkan/device_explorer]: found " << numPhysicalDevices << " physical devices\n";
+    }
+
     void enumeratePhysicalDevicesAndQueues() {
         enumeratePhysicalDevices();
         enumeratePhysicalDeviceProperties();
@@ -321,44 +363,6 @@ private:
             return std::nullopt;
         }
         return offset;
-    }
-
-    // todo: these should be called "initialize / query" instead of enumerate, probably
-    void enumeratePhysicalDevices() {
-        // enumerate physical devices
-        core::u32 numPhysicalDevices = 0;
-        VkResult enumeratePhysicalDevicesResult = vkEnumeratePhysicalDevices(
-            *instance,
-            &numPhysicalDevices,
-            nullptr
-        );
-
-        if(enumeratePhysicalDevicesResult != VK_SUCCESS) {
-            // todo: log this
-            assert(false && "[vulkan/device_explorer]: could not enumerate physical devices for provided instance");
-        }
-        if(numPhysicalDevices == 0) {
-            // todo: log this
-            assert(false && "[vulkan/device_explorer]: zero vulkan physical devices for provided instance");
-        }
-
-        physicalDevices = allocator.allocate<VkPhysicalDevice>(numPhysicalDevices);
-
-        enumeratePhysicalDevicesResult = vkEnumeratePhysicalDevices(
-            *instance,
-            &numPhysicalDevices,
-            physicalDevices.data()
-        );
-
-        if(enumeratePhysicalDevicesResult != VK_SUCCESS) {
-            // todo: log this
-            assert(false && "[vulkan/device_explorer]: could not enumerate physical devices for provided instance");
-        }
-        if(physicalDevices.empty()) {
-            assert(false && "[vulkan/device_explorer]: vulkan did not return any physical device handles");
-        }
-
-        // std::cout << "[vulkan/device_explorer]: found " << numPhysicalDevices << " physical devices\n";
     }
 
     void enumeratePhysicalDeviceProperties() {

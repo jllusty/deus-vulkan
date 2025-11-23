@@ -64,10 +64,11 @@ int main()
     }
     const VkInstance instance = *createdInstance;
 
+    std::span<const VkPhysicalDevice> physicalDevices = config.enumeratePhysicalDevices();
+
     bool destroyInstance = config.destroyInstance();
 
-    // available device-level layers and extensions
-
+    // available device-level extensions
 
     /*
     float priority = 1.0f;
