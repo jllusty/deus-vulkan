@@ -47,7 +47,7 @@ public:
     Configurator(core::memory::Region region, core::log::Logger* pLogger = nullptr)
         : allocator(region), pLogger(pLogger)
     {
-
+        // todo: custom vulkan allocator, inject pLogger calls
     }
 
     // note that we do not return optional here
@@ -147,8 +147,8 @@ public:
         const char* applicationName,
         const char* engineName,
         const core::u32 apiVersion,
-        std::span<const VkLayerProperties> layerProperties,
-        std::span<const VkExtensionProperties> extensionProperties)
+        std::initializer_list<const char *> layerNames,
+        std::initializer_list<const char *> extensionNames)
     {
         VkApplicationInfo appInfo{
             VK_STRUCTURE_TYPE_APPLICATION_INFO,
@@ -159,18 +159,17 @@ public:
             apiVersion
         };
 
-        // vulkan instance create info
+        // flags check
+        core::u32 flags{ 0 };
+        if(std::ranges::find(layerNames, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME) != layerNames.end()) {
+            flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+        }
 
         // Layers: []
-        const core::u32 numLayers{ 0 };
-        const char* const* ppLayerNames { nullptr };
-        // Optional Extensions: [VK_KHR_portability_enumeration]
-        //
-        // 1. VK_KHR_portability_enumeration: used for Mac OS X development environment.
-        // -> enumerate available Vulkan Portability-compliant physical devices and groups
-        // in addition to the Vulkan physical devices and groups that are enumerated by default.
-        const core::u32 numExtensions{ 1 };
-        const char* const ppExtensionNames[] { VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME };
+        const core::u32 numLayers = layerNames.size();
+        const char* const* ppLayerNames { layerNames.begin() };
+        const core::u32 numExtensions = extensionNames.size();
+        const char* const* ppExtensionNames { extensionNames.begin() };
         const VkInstanceCreateInfo createInfo {
             VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,             // sType
             nullptr,                                            // pNext

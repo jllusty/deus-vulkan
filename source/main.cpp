@@ -48,7 +48,13 @@ int main()
     std::span<const VkLayerProperties> layerProps = config.getAvailableInstanceLayerProperties();
     std::span<const VkExtensionProperties> extensionProps = config.getAvailableInstanceExtensionProperties();
 
-    // want to use at least VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME
+    std::optional<const VkInstance> instance = config.createInstance(
+        "Vulkan Application",
+        "deus-vulkan",
+        apiVersion,
+        {},
+        { VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME }
+    );
 
     /*
     float priority = 1.0f;
