@@ -28,6 +28,7 @@ int main()
     core::log::Logger logger(regionLog);
     core::log::Logger* pLogger = &logger;
 
+    // Vulkan Configurator
     gfx::vulkan::Configurator config(regionVulkanConfig, pLogger);
 
     // instance-level vulkan api
@@ -55,6 +56,9 @@ int main()
         {},
         { VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME }
     );
+
+    // available device-level layers and extensions
+
 
     /*
     float priority = 1.0f;

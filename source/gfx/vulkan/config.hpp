@@ -161,8 +161,9 @@ public:
 
         // flags check
         core::u32 flags{ 0 };
-        if(std::ranges::find(layerNames, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME) != layerNames.end()) {
+        if(std::ranges::find(extensionNames, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME) != layerNames.end()) {
             flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+            logInfo("[vulkan/configurator]: extension VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME requested for new instance");
         }
 
         // Layers: []
@@ -195,6 +196,7 @@ public:
             return std::nullopt;
         }
 
+        logInfo("[vulkan/configurator]: created instance");
         instance = vulkanInstance;
         return instance;
     }
@@ -270,19 +272,19 @@ private:
     // log convenience
     void logError(const char* msg) {
         if(pLogger != nullptr) {
-            pLogger->log<core::log::Level::error>(msg);
+            pLogger->error("[%s]: %s", "vulkan/configurator", msg);
         }
     }
 
     void logDebug(const char* msg) {
         if(pLogger != nullptr) {
-            pLogger->log<core::log::Level::debug>(msg);
+            pLogger->error("[%s]: %s", "vulkan/configurator", msg);
         }
     }
 
     void logInfo(const char* msg) {
         if(pLogger != nullptr) {
-            pLogger->log<core::log::Level::info>(msg);
+            pLogger->error("[%s]: %s", "vulkan/configurator", msg);
         }
     }
 
