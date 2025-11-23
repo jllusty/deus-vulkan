@@ -55,6 +55,21 @@ public:
         );
     }
 
+    template<typename... Args>
+    void debug(const char * formatString, Args&&... args) {
+        log<Level::debug>(formatString, std::forward<Args>(args)...);
+    }
+
+    template<typename... Args>
+    void info(const char * formatString, Args&&... args) {
+        log<Level::info>(formatString, std::forward<Args>(args)...);
+    }
+
+    template<typename... Args>
+    void error(const char * formatString, Args&&... args) {
+        log<Level::error>(formatString, std::forward<Args>(args)...);
+    }
+
     template<Level L, typename... Args>
     void log(const char * formatString, Args&&... args) {
         Log log;

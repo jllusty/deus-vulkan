@@ -38,8 +38,8 @@ int main()
     }
     core::u32 apiVersion = *availableInstanceAPI;
 
-    logger.log<core::log::Level::error>(
-        "[main]: instance-level vulkan api version: %d.%d",
+    logger.info(
+        "[main]: fetched instance-level vulkan api version: %d.%d",
         VK_VERSION_MAJOR(apiVersion),
         VK_VERSION_MINOR(apiVersion)
     );
