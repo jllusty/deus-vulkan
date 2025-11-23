@@ -1,7 +1,6 @@
 #pragma once
 
 // just print logs to std::cout for now
-#include <format>
 #include <iostream>
 #include <array>
 

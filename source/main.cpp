@@ -49,13 +49,22 @@ int main()
     std::span<const VkLayerProperties> layerProps = config.getAvailableInstanceLayerProperties();
     std::span<const VkExtensionProperties> extensionProps = config.getAvailableInstanceExtensionProperties();
 
-    std::optional<const VkInstance> instance = config.createInstance(
+    std::optional<const VkInstance> createdInstance = config.createInstance(
         "Vulkan Application",
         "deus-vulkan",
         apiVersion,
         {},
         { VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME }
     );
+    if(!createdInstance.has_value()) {
+        logger.error(
+            "[main]: failed to create vulkan instance"
+        );
+        return -1;
+    }
+    const VkInstance instance = *createdInstance;
+
+    bool destroyInstance = config.destroyInstance();
 
     // available device-level layers and extensions
 

@@ -28,15 +28,18 @@ class Configurator {
     std::span<VkLayerProperties> instanceAvailableLayers{};
     std::span<VkExtensionProperties> instanceAvailableExtensions{};
 
-    VkInstance instance{};
+    std::optional<VkInstance> instance{};
 
     std::span<VkPhysicalDevice> physicalDevices{};
     std::span<VkPhysicalDeviceProperties> physicalDeviceProps{};
     std::span<VkPhysicalDeviceMemoryProperties> physicalDeviceMemoryProps{};
 
-    // a single device can be associated with multiple queues
+    // a single physical device can be associated with multiple queues
     std::span<core::memory::ArrayOffset> queueFamilyPropertiesOffsets{};
     std::span<VkQueueFamilyProperties> queueFamilyProperties{};
+
+    // logical devices
+    std::span<VkDevice> devices;
 
     // logging
     core::log::Logger* pLogger{ nullptr };
@@ -201,6 +204,21 @@ public:
         return instance;
     }
 
+    // return true if succeeds, false if failure
+    [[nodiscard]] const bool destroyInstance() noexcept {
+        if(instance.has_value()) {
+            if(!devices.empty()) {
+                logError("attempt to destroy instance while references to logical devices exist");
+            }
+
+            vkDestroyInstance(*instance, nullptr);
+            return true;
+        }
+
+        logError("attempt to destroy non-existent instance");
+        return false;
+    }
+
     void enumeratePhysicalDevicesAndQueues() {
         enumeratePhysicalDevices();
         enumeratePhysicalDeviceProperties();
@@ -310,7 +328,7 @@ private:
         // enumerate physical devices
         core::u32 numPhysicalDevices = 0;
         VkResult enumeratePhysicalDevicesResult = vkEnumeratePhysicalDevices(
-            instance,
+            *instance,
             &numPhysicalDevices,
             nullptr
         );
@@ -327,7 +345,7 @@ private:
         physicalDevices = allocator.allocate<VkPhysicalDevice>(numPhysicalDevices);
 
         enumeratePhysicalDevicesResult = vkEnumeratePhysicalDevices(
-            instance,
+            *instance,
             &numPhysicalDevices,
             physicalDevices.data()
         );
