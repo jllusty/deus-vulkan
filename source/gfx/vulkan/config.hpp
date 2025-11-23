@@ -46,7 +46,9 @@ public:
 
     Configurator(core::memory::Region region, core::log::Logger* pLogger = nullptr)
         : allocator(region), pLogger(pLogger)
-    {}
+    {
+
+    }
 
     // note that we do not return optional here
     // there is no way in vulkan 1.0 to even ask if 1.0 is supported
@@ -144,6 +146,7 @@ public:
     [[nodiscard]] std::optional<const VkInstance> createInstance(
         const char* applicationName,
         const char* engineName,
+        const core::u32 apiVersion,
         std::span<const VkLayerProperties> layerProperties,
         std::span<const VkExtensionProperties> extensionProperties)
     {
@@ -153,10 +156,11 @@ public:
             applicationName,
             0,
             engineName,
-            VK_MAKE_API_VERSION(0,1,3,0)
+            apiVersion
         };
 
         // vulkan instance create info
+
         // Layers: []
         const core::u32 numLayers{ 0 };
         const char* const* ppLayerNames { nullptr };

@@ -1,6 +1,6 @@
 // main.cpp
-#include <cstddef>
-#include <iostream>
+
+#include <span>
 
 #include <sys/wait.h>
 #include <vulkan/vulkan.h>
@@ -31,17 +31,24 @@ int main()
     gfx::vulkan::Configurator config(regionVulkanConfig, pLogger);
 
     // instance-level vulkan api
-    auto apiVersion = config.getAvailableInstanceVersion();
-    if(!apiVersion) {
+    auto availableInstanceAPI = config.getAvailableInstanceVersion();
+    if(!availableInstanceAPI) {
         pLogger->log<core::log::Level::error>("[main]: could not retrieve vulkan api version");
+        return -1;
     }
-    else {
-        pLogger->log<core::log::Level::error>("[main]: ");
-    }
+    core::u32 apiVersion = *availableInstanceAPI;
+
+    logger.log<core::log::Level::error>(
+        "[main]: instance-level vulkan api version: %d.%d",
+        VK_VERSION_MAJOR(apiVersion),
+        VK_VERSION_MINOR(apiVersion)
+    );
 
     // available instance-level layers and extensions
     std::span<const VkLayerProperties> layerProps = config.getAvailableInstanceLayerProperties();
     std::span<const VkExtensionProperties> extensionProps = config.getAvailableInstanceExtensionProperties();
+
+    // want to use at least VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME
 
     /*
     float priority = 1.0f;

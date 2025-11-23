@@ -1,6 +1,7 @@
 #pragma once
 
 // just print logs to std::cout for now
+#include <format>
 #include <iostream>
 #include <array>
 
@@ -38,50 +39,6 @@ struct Log {
     std::array<char, LogMessageSize> message{};
 };
 
-// log factories
-template<Level L>
-inline const Log create(const char* message) noexcept {
-}
-
-inline const Log debug(const char* message) noexcept {
-    Log log;
-    log.timestamp = time::getTimestamp();
-    log.level = Level::debug;
-    std::snprintf(
-        log.message.data(),
-        log.message.size(),
-        "%s",
-        message
-    );
-    return log;
-}
-
-inline const Log error(const char* message) noexcept {
-    Log log;
-    log.timestamp = time::getTimestamp();
-    log.level = Level::error;
-    std::snprintf(
-        log.message.data(),
-        log.message.size(),
-        "%s",
-        message
-    );
-    return log;
-}
-
-inline const Log info(const char* message) noexcept {
-    Log log;
-    log.timestamp = time::getTimestamp();
-    log.level = Level::info;
-    std::snprintf(
-        log.message.data(),
-        log.message.size(),
-        "%s",
-        message
-    );
-    return log;
-}
-
 class Logger {
     // write buffer
     // we use the core region memory type so that we can use it
@@ -98,8 +55,8 @@ public:
         );
     }
 
-    template<Level L>
-    void log(const char * message) {
+    template<Level L, typename... Args>
+    void log(const char * formatString, Args&&... args) {
         Log log;
         log.timestamp = time::getTimestamp();
 
@@ -113,12 +70,22 @@ public:
             log.level = Level::info;
         }
 
-        std::snprintf(
-            log.message.data(),
-            log.message.size(),
-            "%s",
-            message
-        );
+        if constexpr(sizeof...(Args) == 0) {
+            std::snprintf(
+                log.message.data(),
+                log.message.size(),
+                "%s",
+                formatString
+            );
+        }
+        else {
+            std::snprintf(
+                log.message.data(),
+                log.message.size(),
+                formatString,
+                std::forward<Args>(args)...
+            );
+        }
 
         // todo: async pub
         write(log);
