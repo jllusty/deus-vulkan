@@ -52,7 +52,7 @@ public:
 
     // there is no way in vulkan 1.0 to even ask if 1.0 is supported
     // we just have to infer based on the lack of vkEnumerateInstanceVersion
-    // which was introduced in 1.0
+    // which was introduced in 1.1
     std::optional<const core::u32> getAvailableInstanceVersion() noexcept {
         // we know the signture of vkEnumerateInstanceVersion, should it exist
         PFN_vkVoidFunction vkEnumerateInstanceVersionPtr = vkGetInstanceProcAddr(
@@ -183,10 +183,18 @@ public:
 
         // Create Vulkan Instance
         const VkAllocationCallbacks* pHostMemoryAllocator = nullptr; // use Vulkan's internal allocator
+        VkAllocationCallbacks allocationCallbacks {
+            nullptr,
+            nullptr,
+            nullptr,
+            nullptr,
+            &Configurator::allocationNotification,
+            &Configurator::freeNotification
+        };
         VkInstance vulkanInstance;
         VkResult res = vkCreateInstance(
             &createInfo,
-            pHostMemoryAllocator,
+            nullptr, // &allocationCallbacks,
             &vulkanInstance
         );
 
@@ -371,6 +379,74 @@ public:
         return physicalDevices.front();
     }
 
+    // todo: device queue creation parameters
+    // todo: create more than one device
+    std::span<const VkDevice> createLogicalDevices(const VkPhysicalDevice physicalDevice, std::size_t count = 1) {
+        float priority = 1.0f;
+
+        VkDeviceQueueCreateInfo deviceQueueCreateInfo {
+            VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+            nullptr,
+            0,
+            0,
+            1,
+            &priority
+        };
+
+        // todo: require features
+        //VkPhysicalDeviceFeatures pEnabledFeatures;
+        VkDeviceCreateInfo logicalDeviceCreateInfo {
+            VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+            nullptr,
+            0,
+            1,
+            &deviceQueueCreateInfo,
+            0,
+            nullptr,
+            0,
+            nullptr,
+            nullptr
+        };
+
+        devices = allocator.allocate<VkDevice>(count);
+
+        VkDevice logicalDevice{};
+        VkResult result = vkCreateDevice(
+            physicalDevice,
+            &logicalDeviceCreateInfo,
+            nullptr,
+            devices.data()
+        );
+
+        if(result != VK_SUCCESS) {
+            logError("failed to create a logical device");
+            return {};
+        }
+
+        return devices;
+    }
+
+    bool destroyLogicalDevices() noexcept {
+        for(std::size_t i = 0; i < devices.size(); ++i) {
+            // wait until the device is idle
+            VkResult result = vkDeviceWaitIdle(devices[i]);
+
+            if(result != VK_SUCCESS) {
+                logError("could not wait until logical device was idle for deletion");
+                return false;
+            }
+
+            vkDestroyDevice(
+                devices[i],
+                nullptr
+            );
+        }
+
+        devices = {};
+        logInfo("destroyed all logical devices");
+        return true;
+    }
+
     std::optional<const VkPhysicalDeviceProperties> getPhysicalDeviceProperties(const VkPhysicalDevice& physicalDevice) noexcept {
         if(physicalDevices.empty()) {
             return std::nullopt;
@@ -418,8 +494,30 @@ public:
     }
 
 private:
+    static void allocationNotification(void* pUserData, size_t size,
+            VkInternalAllocationType allocationType,
+            VkSystemAllocationScope allocationScope)
+    {
+        std::cout << "[vulkan/internal]: allocating " << size << " bytes\n";
+        std::cout.flush();
+    }
+
+    static void freeNotification(void* pUserData, size_t size,
+            VkInternalAllocationType allocationType,
+            VkSystemAllocationScope allocationScope)
+    {
+        std::cout << "[vulkan/internal]: freeing " << size << " bytes\n";
+        std::cout.flush();
+    }
+
     // log convenience
     void logError(const char* msg) {
+        if(pLogger != nullptr) {
+            pLogger->error("[%s]: %s", "vulkan/configurator", msg);
+        }
+    }
+
+    void logError(const char* msg, int d) {
         if(pLogger != nullptr) {
             pLogger->error("[%s]: %s", "vulkan/configurator", msg);
         }

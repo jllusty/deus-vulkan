@@ -70,50 +70,24 @@ int main()
     std::span<const VkPhysicalDeviceMemoryProperties> deviceMemoryProps = config.enumeratePhysicalDeviceMemoryProperties();
     std::span<const VkQueueFamilyProperties> queueFamilyProps = config.enumerateQueueFamilyProperties();
 
+    // pick a physical device
+    std::optional<const VkPhysicalDevice> bestPhysicalDevice = config.getBestPhysicalDevice();
+    if(!bestPhysicalDevice.has_value()) {
+        pLogger->error("[main]: could not select a physical device\n");
+        return -1;
+    }
+    const VkPhysicalDevice physicalDevice = *bestPhysicalDevice;
+
+    // todo: device-level extensions
+
+    // create devices
+    std::span<const VkDevice> devices = config.createLogicalDevices(physicalDevice);
+
+    // destruction order: devices -> instance
+    bool destroyDevices = config.destroyLogicalDevices();
     bool destroyInstance = config.destroyInstance();
 
-    // available device-level extensions
-
     /*
-    float priority = 1.0f;
-
-    VkDeviceQueueCreateInfo deviceQueueCreateInfo {
-        VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-        nullptr,
-        0,
-        0,
-        1,
-        &priority
-    };
-
-    // todo: require features
-    //VkPhysicalDeviceFeatures pEnabledFeatures;
-
-    VkDeviceCreateInfo logicalDeviceCreateInfo {
-        VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        nullptr,
-        0,
-        1,
-        &deviceQueueCreateInfo,
-        0,
-        nullptr,
-        0,
-        nullptr,
-        nullptr
-    };
-
-    VkDevice logicalDevice{};
-    VkResult result = vkCreateDevice(
-        physicalDevice,
-        &logicalDeviceCreateInfo,
-        nullptr,
-        &logicalDevice
-    );
-
-    if(result != VK_SUCCESS) {
-        std::cout << "failed to create logical device\n";
-    }
-
     // layers
     core::u32 propertyCount{ 0 };
     result = vkEnumerateInstanceLayerProperties(
@@ -176,19 +150,7 @@ int main()
 
     // destroy vulkan logical device(s)
 
-    /*
-    logger.log(core::log::debug("[main]: waiting until logical device is idle..."));
-    result = vkDeviceWaitIdle(
-        logicalDevice
-    );
-    logger.log(core::log::debug("[main]: logical device is idle, destroying..."));
-    vkDestroyDevice(
-        logicalDevice,
-        nullptr
-    );
-    logger.log(core::log::debug("[main]: logical device destroyed"));
-
-    // destory vulkan instance
+/*     // destory vulkan instance
     logger.log(core::log::debug("[main]: destroying vulkan instance..."));
     vkDestroyInstance(
         vulkanInstance,
