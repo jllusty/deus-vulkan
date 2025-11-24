@@ -35,6 +35,9 @@ class Configurator {
     std::span<core::memory::ArrayOffset> queueFamilyPropertiesOffsets{};
     std::span<VkQueueFamilyProperties> queueFamilyProperties{};
 
+    // device-level extensions
+    std::span<VkExtensionProperties> physicalDeviceExtensionProps{};
+
     // logical devices
     std::span<VkDevice> devices;
 
@@ -379,6 +382,37 @@ public:
         return physicalDevices.front();
     }
 
+    // get device-level available extensions
+    std::span<const VkExtensionProperties> getAvailableDeviceExtensionProperties(const VkPhysicalDevice physicalDevice) noexcept {
+        core::u32 countExtensionProperties{ 0 };
+        VkResult result = vkEnumerateDeviceExtensionProperties(
+            physicalDevice,
+            nullptr,
+            &countExtensionProperties,
+            nullptr
+        );
+
+        if(result != VK_SUCCESS) {
+            logError("could not retrieve device-level available extensions");
+            return {};
+        }
+
+        physicalDeviceExtensionProps = allocator.allocate<VkExtensionProperties>(countExtensionProperties);
+
+        result = vkEnumerateDeviceExtensionProperties(
+            physicalDevice,
+            nullptr,
+            &countExtensionProperties,
+            physicalDeviceExtensionProps.data()
+        );
+
+        if(result != VK_SUCCESS) {
+            logError("could not retrieve device-level available extensions");
+        }
+
+        return physicalDeviceExtensionProps;
+    }
+
     // todo: device queue creation parameters
     // todo: create more than one device
     std::span<const VkDevice> createLogicalDevices(const VkPhysicalDevice physicalDevice, std::size_t count = 1) {
@@ -512,12 +546,6 @@ private:
 
     // log convenience
     void logError(const char* msg) {
-        if(pLogger != nullptr) {
-            pLogger->error("[%s]: %s", "vulkan/configurator", msg);
-        }
-    }
-
-    void logError(const char* msg, int d) {
         if(pLogger != nullptr) {
             pLogger->error("[%s]: %s", "vulkan/configurator", msg);
         }

@@ -78,7 +78,8 @@ int main()
     }
     const VkPhysicalDevice physicalDevice = *bestPhysicalDevice;
 
-    // todo: device-level extensions
+    // device-level extensions
+    std::span<const VkExtensionProperties> deviceExtensions = config.getAvailableDeviceExtensionProperties(physicalDevice);
 
     // create devices
     std::span<const VkDevice> devices = config.createLogicalDevices(physicalDevice);
@@ -88,49 +89,6 @@ int main()
     bool destroyInstance = config.destroyInstance();
 
     /*
-    // layers
-    core::u32 propertyCount{ 0 };
-    result = vkEnumerateInstanceLayerProperties(
-        &propertyCount,
-        nullptr //&layerProperties
-    );
-
-    std::vector<VkLayerProperties> layerProperties(propertyCount);
-
-    result = vkEnumerateInstanceLayerProperties(
-        &propertyCount,
-        layerProperties.data()
-    );
-
-    core::u32 numDeviceLayerProperties{ 0 };
-    result = vkEnumerateDeviceLayerProperties(
-        physicalDevice,
-        &numDeviceLayerProperties,
-        nullptr
-    );
-
-    layerProperties.resize(numDeviceLayerProperties);
-    result = vkEnumerateDeviceLayerProperties(
-        physicalDevice,
-        &numDeviceLayerProperties,
-        layerProperties.data()
-    );
-
-    core::u32 pCount{ 0 };
-    std::vector<VkExtensionProperties> instanceExtensionProps;
-    result = vkEnumerateInstanceExtensionProperties(
-        nullptr,
-        &pCount,
-        nullptr
-    );
-
-    instanceExtensionProps.resize(pCount);
-    result = vkEnumerateInstanceExtensionProperties(
-        nullptr,
-        &pCount,
-        instanceExtensionProps.data()
-    );
-
     std::vector<VkExtensionProperties> deviceExtensionProps;
     result = vkEnumerateDeviceExtensionProperties(
         physicalDevice,
