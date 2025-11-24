@@ -55,22 +55,22 @@ public:
     }
 
     template<typename... Args>
-    void debug(const char * formatString, Args&&... args) {
-        log<Level::debug>(formatString, std::forward<Args>(args)...);
+    void debug(const char * subsystem, const char * messageFormatString, Args&&... args) {
+        log<Level::debug>(subsystem, messageFormatString, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
-    void info(const char * formatString, Args&&... args) {
-        log<Level::info>(formatString, std::forward<Args>(args)...);
+    void info(const char * subsystem, const char * messageFormatString, Args&&... args) {
+        log<Level::info>(subsystem, messageFormatString, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
-    void error(const char * formatString, Args&&... args) {
-        log<Level::error>(formatString, std::forward<Args>(args)...);
+    void error(const char * subsystem, const char * messageFormatString, Args&&... args) {
+        log<Level::error>(subsystem, messageFormatString, std::forward<Args>(args)...);
     }
 
     template<Level L, typename... Args>
-    void log(const char * formatString, Args&&... args) {
+    void log(const char * subsystem, const char * messageFormatString, Args&&... args) {
         Log log;
         log.timestamp = time::getTimestamp();
 
@@ -84,19 +84,29 @@ public:
             log.level = Level::info;
         }
 
-        if constexpr(sizeof...(Args) == 0) {
-            std::snprintf(
+        std::size_t prefixLength{ 0 };
+        if(subsystem != nullptr) {
+            prefixLength = std::snprintf(
                 log.message.data(),
                 log.message.size(),
+                "[%s]: ",
+                subsystem
+            );
+        }
+
+        if constexpr(sizeof...(Args) == 0) {
+            std::snprintf(
+                log.message.data() + prefixLength,
+                log.message.size() - prefixLength,
                 "%s",
-                formatString
+                messageFormatString
             );
         }
         else {
             std::snprintf(
-                log.message.data(),
-                log.message.size(),
-                formatString,
+                log.message.data() + prefixLength,
+                log.message.size() - prefixLength,
+                messageFormatString,
                 std::forward<Args>(args)...
             );
         }

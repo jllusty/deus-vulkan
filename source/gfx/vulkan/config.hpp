@@ -545,21 +545,24 @@ private:
     }
 
     // log convenience
-    void logError(const char* msg) {
+    template<typename... Args>
+    void logError(const char* msg, Args... args) {
         if(pLogger != nullptr) {
-            pLogger->error("[%s]: %s", "vulkan/configurator", msg);
+            pLogger->error("vulkan/configurator", msg, std::forward<Args>(args)...);
         }
     }
 
-    void logDebug(const char* msg) {
+    template<typename... Args>
+    void logDebug(const char* msg, Args... args) {
         if(pLogger != nullptr) {
-            pLogger->debug("[%s]: %s", "vulkan/configurator", msg);
+            pLogger->debug("vulkan/configurator", msg, std::forward<Args>(args)...);
         }
     }
 
-    void logInfo(const char* msg) {
+    template<typename... Args>
+    void logInfo(const char* msg, Args... args) {
         if(pLogger != nullptr) {
-            pLogger->info("[%s]: %s", "vulkan/configurator", msg);
+            pLogger->info("vulkan/configurator", msg, std::forward<Args>(args)...);
         }
     }
 

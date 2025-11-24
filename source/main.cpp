@@ -34,16 +34,10 @@ int main()
     // instance-level vulkan api
     auto availableInstanceAPI = config.getAvailableInstanceVersion();
     if(!availableInstanceAPI) {
-        pLogger->log<core::log::Level::error>("[main]: could not retrieve vulkan api version");
+        pLogger->error("main", "could not retrieve vulkan api version");
         return -1;
     }
     core::u32 apiVersion = *availableInstanceAPI;
-
-    logger.info(
-        "[main]: fetched instance-level vulkan api version: %d.%d",
-        VK_VERSION_MAJOR(apiVersion),
-        VK_VERSION_MINOR(apiVersion)
-    );
 
     // available instance-level layers and extensions
     std::span<const VkLayerProperties> layerProps = config.getAvailableInstanceLayerProperties();
@@ -57,9 +51,7 @@ int main()
         { VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME }
     );
     if(!createdInstance.has_value()) {
-        logger.error(
-            "[main]: failed to create vulkan instance"
-        );
+        logger.error("main", "failed to create vulkan instance");
         return -1;
     }
     const VkInstance instance = *createdInstance;
@@ -73,7 +65,7 @@ int main()
     // pick a physical device
     std::optional<const VkPhysicalDevice> bestPhysicalDevice = config.getBestPhysicalDevice();
     if(!bestPhysicalDevice.has_value()) {
-        pLogger->error("[main]: could not select a physical device\n");
+        pLogger->error("main", "could not select a physical device");
         return -1;
     }
     const VkPhysicalDevice physicalDevice = *bestPhysicalDevice;
@@ -87,35 +79,6 @@ int main()
     // destruction order: devices -> instance
     bool destroyDevices = config.destroyLogicalDevices();
     bool destroyInstance = config.destroyInstance();
-
-    /*
-    std::vector<VkExtensionProperties> deviceExtensionProps;
-    result = vkEnumerateDeviceExtensionProperties(
-        physicalDevice,
-        nullptr,
-        &pCount,
-        nullptr
-    );
-
-    deviceExtensionProps.resize(pCount);
-    result = vkEnumerateDeviceExtensionProperties(
-        physicalDevice,
-        nullptr,
-        &pCount,
-        deviceExtensionProps.data()
-    );
-    */
-
-    // destroy vulkan logical device(s)
-
-/*     // destory vulkan instance
-    logger.log(core::log::debug("[main]: destroying vulkan instance..."));
-    vkDestroyInstance(
-        vulkanInstance,
-        nullptr
-    );
-    logger.log(core::log::debug("[main]: vulkan instance destroyed"));
-    */
 
     return 0;
 }
