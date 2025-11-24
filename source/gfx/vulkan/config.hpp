@@ -4,9 +4,6 @@
 //     instance level and extensions at the device level
 #pragma once
 
-#include <cassert>
-
-#include <iostream>
 #include <span>
 
 #include "core/memory/stack_allocator.hpp"
@@ -358,14 +355,6 @@ public:
         }
 
         return queueFamilyProperties;
-    }
-
-
-    void enumeratePhysicalDevicesAndQueues() {
-        enumeratePhysicalDevices();
-        enumeratePhysicalDeviceProperties();
-        enumeratePhysicalDeviceMemoryProperties();
-        enumerateQueueFamilyProperties();
     }
 
     constexpr std::span<const VkPhysicalDevice> getPhysicalDevices() const noexcept {
