@@ -64,9 +64,11 @@ int main()
     }
     const VkInstance instance = *createdInstance;
 
+    // query device properties, memory, and queues
     std::span<const VkPhysicalDevice> physicalDevices = config.enumeratePhysicalDevices();
-
     std::span<const VkPhysicalDeviceProperties> deviceProps = config.enumeratePhysicalDeviceProperties();
+    std::span<const VkPhysicalDeviceMemoryProperties> deviceMemoryProps = config.enumeratePhysicalDeviceMemoryProperties();
+    std::span<const VkQueueFamilyProperties> queueFamilyProps = config.enumerateQueueFamilyProperties();
 
     bool destroyInstance = config.destroyInstance();
 

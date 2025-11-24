@@ -288,6 +288,79 @@ public:
         return physicalDeviceProps;
     }
 
+    std::span<const VkPhysicalDeviceMemoryProperties> enumeratePhysicalDeviceMemoryProperties() noexcept {
+        if(physicalDevices.empty()) {
+            logError("no physical devices enumerated");
+        }
+
+        physicalDeviceMemoryProps = allocator.allocate<VkPhysicalDeviceMemoryProperties>(physicalDevices.size());
+        for(std::size_t deviceIndex = 0; deviceIndex < physicalDevices.size(); ++deviceIndex) {
+            const VkPhysicalDevice& physicalDevice = physicalDevices[deviceIndex];
+            vkGetPhysicalDeviceMemoryProperties(
+                physicalDevice,
+                &physicalDeviceMemoryProps[deviceIndex]
+            );
+
+            const VkPhysicalDeviceMemoryProperties& props = physicalDeviceMemoryProps[deviceIndex];
+        }
+
+        return physicalDeviceMemoryProps;
+    }
+
+    std::span<const VkQueueFamilyProperties> enumerateQueueFamilyProperties() noexcept {
+        // prefetch: get the total size
+        std::size_t totalNumQueueFamilyProperties{ 0 };
+        for(std::size_t deviceIndex = 0; deviceIndex < physicalDevices.size(); ++deviceIndex) {
+            core::u32 numQueueFamilyProperties{ 0 };
+            vkGetPhysicalDeviceQueueFamilyProperties(
+                physicalDevices[deviceIndex],
+                &numQueueFamilyProperties,
+                nullptr
+            );
+            totalNumQueueFamilyProperties += static_cast<std::size_t>(numQueueFamilyProperties);
+        }
+
+        // allocate index array header
+        queueFamilyPropertiesOffsets = allocator.allocate<core::memory::ArrayOffset>(physicalDevices.size());
+
+        // allocate actual space for the family properties
+        queueFamilyProperties = allocator
+            .allocate<VkQueueFamilyProperties>(totalNumQueueFamilyProperties);
+
+        core::u32 currentNumQueueFamilyProperties{ 0 };
+        for(std::size_t deviceIndex = 0; deviceIndex < physicalDevices.size(); ++deviceIndex) {
+            const VkPhysicalDevice& physicalDevice = physicalDevices[deviceIndex];
+
+            // populate index array and allocator
+            core::u32 numQueueFamilyProperties{ 0 };
+            vkGetPhysicalDeviceQueueFamilyProperties(
+                physicalDevice,
+                &numQueueFamilyProperties,
+                nullptr
+            );
+
+            // set header offset and compute write location
+            core::memory::ArrayOffset& arrayOffset = queueFamilyPropertiesOffsets[deviceIndex];
+
+            arrayOffset.offset = currentNumQueueFamilyProperties;
+            arrayOffset.length = numQueueFamilyProperties;
+
+            VkQueueFamilyProperties& familyProps = queueFamilyProperties[currentNumQueueFamilyProperties];
+
+            vkGetPhysicalDeviceQueueFamilyProperties(
+                physicalDevice,
+                &numQueueFamilyProperties,
+                &familyProps
+            );
+
+            // increment count
+            currentNumQueueFamilyProperties += numQueueFamilyProperties;
+        }
+
+        return queueFamilyProperties;
+    }
+
+
     void enumeratePhysicalDevicesAndQueues() {
         enumeratePhysicalDevices();
         enumeratePhysicalDeviceProperties();
@@ -392,77 +465,6 @@ private:
         return offset;
     }
 
-    void enumeratePhysicalDeviceMemoryProperties() {
-        physicalDeviceMemoryProps = allocator.allocate<VkPhysicalDeviceMemoryProperties>(physicalDevices.size());
-        for(std::size_t deviceIndex = 0; deviceIndex < physicalDevices.size(); ++deviceIndex) {
-            const VkPhysicalDevice& physicalDevice = physicalDevices[deviceIndex];
-            vkGetPhysicalDeviceMemoryProperties(
-                physicalDevice,
-                &physicalDeviceMemoryProps[deviceIndex]
-            );
-
-            const VkPhysicalDeviceMemoryProperties& props = physicalDeviceMemoryProps[deviceIndex];
-
-            // todo: list memory heap types
-            std::cout << "got device memory properties:\n" <<
-                "\t memoryTypeCount: " << props.memoryTypeCount << "\n"
-                "\t memoryHeapCount: " << props.memoryHeapCount << "\n";
-        }
-    }
-
-    void enumerateQueueFamilyProperties() {
-        // prefetch: get the total size
-        std::size_t totalNumQueueFamilyProperties{ 0 };
-        for(std::size_t deviceIndex = 0; deviceIndex < physicalDevices.size(); ++deviceIndex) {
-            core::u32 numQueueFamilyProperties{ 0 };
-            vkGetPhysicalDeviceQueueFamilyProperties(
-                physicalDevices[deviceIndex],
-                &numQueueFamilyProperties,
-                nullptr
-            );
-            totalNumQueueFamilyProperties += static_cast<std::size_t>(numQueueFamilyProperties);
-        }
-
-        // allocate index array header
-        queueFamilyPropertiesOffsets = allocator.allocate<core::memory::ArrayOffset>(physicalDevices.size());
-
-        // allocate actual space for the family properties
-        queueFamilyProperties = allocator
-            .allocate<VkQueueFamilyProperties>(totalNumQueueFamilyProperties);
-
-        core::u32 currentNumQueueFamilyProperties{ 0 };
-        for(std::size_t deviceIndex = 0; deviceIndex < physicalDevices.size(); ++deviceIndex) {
-            const VkPhysicalDevice& physicalDevice = physicalDevices[deviceIndex];
-
-            // populate index array and allocator
-            core::u32 numQueueFamilyProperties{ 0 };
-            vkGetPhysicalDeviceQueueFamilyProperties(
-                physicalDevice,
-                &numQueueFamilyProperties,
-                nullptr
-            );
-
-            std::cout << "[vulkan/device_explorer]: there are " << numQueueFamilyProperties
-                << " queues on the physical device " << deviceIndex << "\n";
-
-            // set header offset and compute write location
-            core::memory::ArrayOffset& arrayOffset = queueFamilyPropertiesOffsets[deviceIndex];
-
-            arrayOffset.offset = currentNumQueueFamilyProperties;
-            arrayOffset.length = numQueueFamilyProperties;
-
-            VkQueueFamilyProperties& familyProps = queueFamilyProperties[currentNumQueueFamilyProperties];
-
-            vkGetPhysicalDeviceQueueFamilyProperties(
-                physicalDevice,
-                &numQueueFamilyProperties,
-                &familyProps
-            );
-
-            // increment count
-            currentNumQueueFamilyProperties += numQueueFamilyProperties;
-        }
-    }
 };
 
 }
