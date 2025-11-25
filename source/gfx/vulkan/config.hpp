@@ -42,15 +42,15 @@ class Configurator {
     std::span<VkDevice> devices;
 
     // logging
-    core::log::Logger* pLogger{ nullptr };
+    core::log::Logger& log;
 
 public:
     Configurator() = delete;
 
-    Configurator(core::memory::Region region, core::log::Logger* pLogger = nullptr)
-        : allocator(region), pLogger(pLogger)
+    Configurator(core::memory::Region region, core::log::Logger& log)
+        : allocator(region), log(log)
     {
-        // todo: custom vulkan allocator, inject pLogger calls
+        // todo: custom vulkan allocator callbacks, inject pLogger calls
     }
 
     // there is no way in vulkan 1.0 to even ask if 1.0 is supported
@@ -413,74 +413,6 @@ public:
         return physicalDeviceExtensionProps;
     }
 
-    // todo: device queue creation parameters
-    // todo: create more than one device
-    std::span<const VkDevice> createLogicalDevices(const VkPhysicalDevice physicalDevice, std::size_t count = 1) {
-        float priority = 1.0f;
-
-        VkDeviceQueueCreateInfo deviceQueueCreateInfo {
-            VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-            nullptr,
-            0,
-            0,
-            1,
-            &priority
-        };
-
-        // todo: require features
-        //VkPhysicalDeviceFeatures pEnabledFeatures;
-        VkDeviceCreateInfo logicalDeviceCreateInfo {
-            VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-            nullptr,
-            0,
-            1,
-            &deviceQueueCreateInfo,
-            0,
-            nullptr,
-            0,
-            nullptr,
-            nullptr
-        };
-
-        devices = allocator.allocate<VkDevice>(count);
-
-        VkDevice logicalDevice{};
-        VkResult result = vkCreateDevice(
-            physicalDevice,
-            &logicalDeviceCreateInfo,
-            nullptr,
-            devices.data()
-        );
-
-        if(result != VK_SUCCESS) {
-            logError("failed to create a logical device");
-            return {};
-        }
-
-        return devices;
-    }
-
-    bool destroyLogicalDevices() noexcept {
-        for(std::size_t i = 0; i < devices.size(); ++i) {
-            // wait until the device is idle
-            VkResult result = vkDeviceWaitIdle(devices[i]);
-
-            if(result != VK_SUCCESS) {
-                logError("could not wait until logical device was idle for deletion");
-                return false;
-            }
-
-            vkDestroyDevice(
-                devices[i],
-                nullptr
-            );
-        }
-
-        devices = {};
-        logInfo("destroyed all logical devices");
-        return true;
-    }
-
     std::optional<const VkPhysicalDeviceProperties> getPhysicalDeviceProperties(const VkPhysicalDevice& physicalDevice) noexcept {
         if(physicalDevices.empty()) {
             return std::nullopt;
@@ -547,23 +479,17 @@ private:
     // log convenience
     template<typename... Args>
     void logError(const char* msg, Args... args) {
-        if(pLogger != nullptr) {
-            pLogger->error("vulkan/configurator", msg, std::forward<Args>(args)...);
-        }
+        log.error("vulkan/configurator", msg, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
     void logDebug(const char* msg, Args... args) {
-        if(pLogger != nullptr) {
-            pLogger->debug("vulkan/configurator", msg, std::forward<Args>(args)...);
-        }
+        log.debug("vulkan/configurator", msg, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
     void logInfo(const char* msg, Args... args) {
-        if(pLogger != nullptr) {
-            pLogger->info("vulkan/configurator", msg, std::forward<Args>(args)...);
-        }
+        log.info("vulkan/configurator", msg, std::forward<Args>(args)...);
     }
 
     // get physical device index

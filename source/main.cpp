@@ -13,6 +13,7 @@
 #include "core/log/logging.hpp"
 
 #include "gfx/vulkan/config.hpp"
+#include "gfx/vulkan/context.hpp"
 
 int main()
 {
@@ -23,18 +24,19 @@ int main()
     // subsystem call: create a memory region with the right size from the shared base allocator
     core::memory::Region regionLog = baseAllocator.reserve(1024 * 1024);
     core::memory::Region regionVulkanConfig = baseAllocator.reserve(1024 * 1024);
+    core::memory::Region regionVulkanContext = baseAllocator.reserve(1024 * 1024);
 
     // Logging
-    core::log::Logger logger(regionLog);
-    core::log::Logger* pLogger = &logger;
+    int val = 3, uval = -3;
+    core::log::Logger log(regionLog);
 
     // Vulkan Configurator
-    gfx::vulkan::Configurator config(regionVulkanConfig, pLogger);
+    gfx::vulkan::Configurator config(regionVulkanConfig, log);
 
     // instance-level vulkan api
     auto availableInstanceAPI = config.getAvailableInstanceVersion();
     if(!availableInstanceAPI) {
-        pLogger->error("main", "could not retrieve vulkan api version");
+        log.error("main", "could not retrieve vulkan api version");
         return -1;
     }
     core::u32 apiVersion = *availableInstanceAPI;
@@ -51,7 +53,7 @@ int main()
         { VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME }
     );
     if(!createdInstance.has_value()) {
-        logger.error("main", "failed to create vulkan instance");
+        log.error("main", "failed to create vulkan instance");
         return -1;
     }
     const VkInstance instance = *createdInstance;
@@ -65,19 +67,26 @@ int main()
     // pick a physical device
     std::optional<const VkPhysicalDevice> bestPhysicalDevice = config.getBestPhysicalDevice();
     if(!bestPhysicalDevice.has_value()) {
-        pLogger->error("main", "could not select a physical device");
+        log.error("main", "could not select a physical device");
         return -1;
     }
     const VkPhysicalDevice physicalDevice = *bestPhysicalDevice;
 
+    log.info("main","I chose physical device %d", reinterpret_cast<std::size_t>(physicalDevice));
+
     // device-level extensions
     std::span<const VkExtensionProperties> deviceExtensions = config.getAvailableDeviceExtensionProperties(physicalDevice);
 
-    // create devices
-    std::span<const VkDevice> devices = config.createLogicalDevices(physicalDevice);
+    // create gpu context
+    gfx::vulkan::GpuContext context {
+        regionVulkanContext,
+        log,
+        config
+    };
+    std::span<const VkDevice> devices = context.createDevices(physicalDevice);
 
     // destruction order: devices -> instance
-    bool destroyDevices = config.destroyLogicalDevices();
+    bool destroyDevices = context.destroyDevices();
     bool destroyInstance = config.destroyInstance();
 
     return 0;
