@@ -52,8 +52,6 @@ int main()
     }
     const VkPhysicalDevice physicalDevice = *bestPhysicalDevice;
 
-    log.info("main","I chose physical device %d", reinterpret_cast<std::size_t>(physicalDevice));
-
     // create gpu context
     gfx::vulkan::GpuContext context {
         regionVulkanContext,

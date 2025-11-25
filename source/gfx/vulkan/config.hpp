@@ -28,7 +28,7 @@ class Configurator {
     core::memory::StackAllocator allocator;
 
     // available version of vulkan api
-    std::optional<core::u32> vulkanVersion{};
+    std::optional<core::u32> apiVersion{};
 
     // available layers and extensions for a VkInstance
     std::span<VkLayerProperties> instanceAvailableLayers{};
@@ -53,27 +53,27 @@ class Configurator {
 public:
     static std::optional<Configurator> create(core::memory::Region region,
         InstanceRequest request,
-        core::log::Logger& log)
+        core::log::Logger& log) noexcept
     {
         // call private constructor
         Configurator config(region, log);
 
         // instance-level vulkan api
-        std::optional<core::u32> availableInstanceAPI = config.getAvailableInstanceVersion();
+        std::optional<core::u32> availableInstanceAPI = config.queryAvailableInstanceVersion();
         if(!availableInstanceAPI) {
             log.error("vulkan/config","could not retrieve vulkan api version");
-            return std::nullopt;;
+            return std::nullopt;
         }
-        core::u32 apiVersion = *availableInstanceAPI;
+        config.apiVersion = *availableInstanceAPI;
 
-        // available instance-level layers and extensions
-        std::span<const VkLayerProperties> layerProps = config.getAvailableInstanceLayerProperties();
-        std::span<const VkExtensionProperties> extensionProps = config.getAvailableInstanceExtensionProperties();
+        // query, store, and return available instance-level layers and extensions
+        std::span<const VkLayerProperties> layerProps = config.queryAvailableInstanceLayerProperties();
+        std::span<const VkExtensionProperties> extensionProps = config.queryAvailableInstanceExtensionProperties();
 
         std::optional<const VkInstance> createdInstance = config.createInstance(
             "Vulkan Application",
             "deus-vulkan",
-            apiVersion,
+            *availableInstanceAPI,
             {},
             { VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME }
         );
@@ -82,12 +82,13 @@ public:
             return std::nullopt;
         }
 
-        // query device properties, memory, and queues
+        // query, store, and return device properties, memory, and queues
         std::span<const VkPhysicalDevice> physicalDevices = config.enumeratePhysicalDevices();
         std::span<const VkPhysicalDeviceProperties> deviceProps = config.enumeratePhysicalDeviceProperties();
         std::span<const VkPhysicalDeviceMemoryProperties> deviceMemoryProps = config.enumeratePhysicalDeviceMemoryProperties();
         std::span<const VkQueueFamilyProperties> queueFamilyProps = config.enumerateQueueFamilyProperties();
 
+        // return a config with a properly set instance, invalidate the local temporary config's instance
         return std::move(config);
     }
 
@@ -98,7 +99,7 @@ public:
     Configurator(Configurator&& other)
         : allocator(other.allocator), log(other.log)
     {
-        vulkanVersion = other.vulkanVersion;
+        apiVersion = other.apiVersion;
 
         // available layers and extensions for a VkInstance
         instanceAvailableLayers = other.instanceAvailableLayers;
@@ -122,174 +123,15 @@ public:
     }
     Configurator& operator=(Configurator&& other) = delete;
 
-    // return true if succeeds, false if failure
     ~Configurator() {
         if(!instance.has_value()) {
+            // this will happen once on startup (see create function)
             logInfo("attempt to destroy non-existent instance");
             return;
         }
 
         vkDestroyInstance(*instance, nullptr);
         logInfo("destroyed instance");
-    }
-
-
-    // there is no way in vulkan 1.0 to even ask if 1.0 is supported
-    // we just have to infer based on the lack of vkEnumerateInstanceVersion
-    // which was introduced in 1.1
-    std::optional<const core::u32> getAvailableInstanceVersion() noexcept {
-        // we know the signture of vkEnumerateInstanceVersion, should it exist
-        PFN_vkVoidFunction vkEnumerateInstanceVersionPtr = vkGetInstanceProcAddr(
-            nullptr,
-            "vkEnumerateInstanceVersion"
-        );
-
-        if(vkEnumerateInstanceVersionPtr != nullptr) {
-            core::u32 version{ 0 };
-            VkResult result =
-                reinterpret_cast<VkResult(VKAPI_PTR*)(core::u32*)>
-                (vkEnumerateInstanceVersionPtr)(&version);
-
-            if(result != VK_SUCCESS) {
-                logError("could not retrieve vulkan version >= 1.1");
-                return std::nullopt;
-            }
-
-            return version;
-        }
-
-        // we must assume that if we did not get a valid function pointer from vulkan on
-        // the first command call, it is because that function is not defined and we
-        // are working with vulkan 1.0
-        return VK_VERSION_1_0;
-    }
-
-    std::span<const VkLayerProperties> getAvailableInstanceLayerProperties() noexcept {
-        if(!instanceAvailableLayers.empty()) {
-            return instanceAvailableLayers;
-        }
-
-        core::u32 numLayers{ 0 };
-        VkResult result = vkEnumerateInstanceLayerProperties(
-            &numLayers,
-            nullptr
-        );
-
-        if(result != VK_SUCCESS || numLayers == 0) {
-            logError("could not get any available instance layers");
-            return {};
-        }
-
-        instanceAvailableLayers = allocator.allocate<VkLayerProperties>(numLayers);
-
-        result = vkEnumerateInstanceLayerProperties(
-            &numLayers,
-            instanceAvailableLayers.data()
-        );
-
-        if(result != VK_SUCCESS || instanceAvailableLayers.empty()) {
-            logError("could not get any available instance layers");
-        }
-
-        return instanceAvailableLayers;
-    }
-
-    std::span<const VkExtensionProperties> getAvailableInstanceExtensionProperties() noexcept {
-        if(!instanceAvailableExtensions.empty()) {
-            return instanceAvailableExtensions;
-        }
-
-        core::u32 numExtensions{ 0 };
-        VkResult result = vkEnumerateInstanceExtensionProperties(
-            nullptr,
-            &numExtensions,
-            nullptr
-        );
-
-        if(result != VK_SUCCESS || numExtensions == 0) {
-            logError("could not get any available instance extensions");
-            return {};
-        }
-
-        instanceAvailableExtensions = allocator.allocate<VkExtensionProperties>(numExtensions);
-
-        result = vkEnumerateInstanceExtensionProperties(
-            nullptr,
-            &numExtensions,
-            instanceAvailableExtensions.data()
-        );
-
-        if(result != VK_SUCCESS || instanceAvailableLayers.empty()) {
-            logError("could not get any available instance layers");
-        }
-
-        return instanceAvailableExtensions;
-    }
-
-    [[nodiscard]] std::optional<const VkInstance> createInstance(
-        const char* applicationName,
-        const char* engineName,
-        const core::u32 apiVersion,
-        std::initializer_list<const char *> layerNames,
-        std::initializer_list<const char *> extensionNames)
-    {
-        VkApplicationInfo appInfo{
-            VK_STRUCTURE_TYPE_APPLICATION_INFO,
-            nullptr,
-            applicationName,
-            0,
-            engineName,
-            apiVersion
-        };
-
-        // flags check
-        core::u32 flags{ 0 };
-        if(std::ranges::find(extensionNames, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME) != layerNames.end()) {
-            flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
-            logInfo("extension VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME requested for new instance");
-        }
-
-        // Layers: []
-        const core::u32 numLayers = layerNames.size();
-        const char* const* ppLayerNames { layerNames.begin() };
-        const core::u32 numExtensions = extensionNames.size();
-        const char* const* ppExtensionNames { extensionNames.begin() };
-        const VkInstanceCreateInfo createInfo {
-            VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,             // sType
-            nullptr,                                            // pNext
-            VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR,   // flags
-            &appInfo,                                           // pApplicationInfo
-            numLayers,                                          // enabledLayerCount
-            ppLayerNames,                                       // ppEnabledLayerNames
-            numExtensions,                                      // enabledExtensionCount
-            ppExtensionNames                                    // ppEnabledExtensionNames
-        };
-
-        // Create Vulkan Instance
-        const VkAllocationCallbacks* pHostMemoryAllocator = nullptr; // use Vulkan's internal allocator
-        VkAllocationCallbacks allocationCallbacks {
-            nullptr,
-            nullptr,
-            nullptr,
-            nullptr,
-            &Configurator::allocationNotification,
-            &Configurator::freeNotification
-        };
-        VkInstance vulkanInstance;
-        VkResult res = vkCreateInstance(
-            &createInfo,
-            nullptr, // &allocationCallbacks,
-            &vulkanInstance
-        );
-
-        if(res != VK_SUCCESS) {
-            logError("could not create vulkan instance");
-            return std::nullopt;
-        }
-
-        logInfo("created instance");
-        instance = vulkanInstance;
-        return instance;
     }
 
     constexpr std::span<const VkPhysicalDevice> getPhysicalDevices() const noexcept {
@@ -307,37 +149,11 @@ public:
     }
 
     // get device-level available extensions
-    std::span<const VkExtensionProperties> getAvailableDeviceExtensionProperties(const VkPhysicalDevice physicalDevice) noexcept {
-        core::u32 countExtensionProperties{ 0 };
-        VkResult result = vkEnumerateDeviceExtensionProperties(
-            physicalDevice,
-            nullptr,
-            &countExtensionProperties,
-            nullptr
-        );
-
-        if(result != VK_SUCCESS) {
-            logError("could not retrieve device-level available extensions");
-            return {};
-        }
-
-        physicalDeviceExtensionProps = allocator.allocate<VkExtensionProperties>(countExtensionProperties);
-
-        result = vkEnumerateDeviceExtensionProperties(
-            physicalDevice,
-            nullptr,
-            &countExtensionProperties,
-            physicalDeviceExtensionProps.data()
-        );
-
-        if(result != VK_SUCCESS) {
-            logError("could not retrieve device-level available extensions");
-        }
-
+    std::span<const VkExtensionProperties> getAvailableDeviceExtensionProperties(const VkPhysicalDevice physicalDevice) const noexcept {
         return physicalDeviceExtensionProps;
     }
 
-    std::optional<const VkPhysicalDeviceProperties> getPhysicalDeviceProperties(const VkPhysicalDevice& physicalDevice) noexcept {
+    std::optional<const VkPhysicalDeviceProperties> getPhysicalDeviceProperties(const VkPhysicalDevice& physicalDevice) const noexcept {
         if(physicalDevices.empty()) {
             return std::nullopt;
         }
@@ -351,7 +167,7 @@ public:
         return physicalDeviceProps[*deviceIndex];
     }
 
-    std::optional<const VkPhysicalDeviceMemoryProperties> getPhysicalDeviceMemoryProperties(const VkPhysicalDevice& physicalDevice) {
+    std::optional<const VkPhysicalDeviceMemoryProperties> getPhysicalDeviceMemoryProperties(const VkPhysicalDevice& physicalDevice) const noexcept {
         if(physicalDevices.empty()) {
             return std::nullopt;
         }
@@ -365,7 +181,7 @@ public:
         return physicalDeviceMemoryProps[*deviceIndex];
     }
 
-    std::span<const VkQueueFamilyProperties> getQueueFamilyProperties(const VkPhysicalDevice& physicalDevice) const {
+    std::span<const VkQueueFamilyProperties> getQueueFamilyProperties(const VkPhysicalDevice& physicalDevice) const noexcept {
         if(physicalDevices.empty()) {
             return {};
         }
@@ -579,6 +395,155 @@ private:
         return queueFamilyProperties;
     }
 
+    // there is no way in vulkan 1.0 to even ask if 1.0 is supported
+    // we just have to infer based on the lack of vkEnumerateInstanceVersion
+    // which was introduced in 1.1
+    std::optional<const core::u32> queryAvailableInstanceVersion() noexcept {
+        // we know the signture of vkEnumerateInstanceVersion, should it exist
+        PFN_vkVoidFunction vkEnumerateInstanceVersionPtr = vkGetInstanceProcAddr(
+            nullptr,
+            "vkEnumerateInstanceVersion"
+        );
+
+        if(vkEnumerateInstanceVersionPtr != nullptr) {
+            core::u32 version{ 0 };
+            VkResult result =
+                reinterpret_cast<VkResult(VKAPI_PTR*)(core::u32*)>
+                (vkEnumerateInstanceVersionPtr)(&version);
+
+            if(result != VK_SUCCESS) {
+                logError("could not retrieve vulkan version >= 1.1");
+                return std::nullopt;
+            }
+
+            return version;
+        }
+
+        // we must assume that if we did not get a valid function pointer from vulkan on
+        // the first command call, it is because that function is not defined and we
+        // are working with vulkan 1.0
+        return VK_VERSION_1_0;
+    }
+
+    std::span<const VkLayerProperties> queryAvailableInstanceLayerProperties() noexcept {
+        core::u32 numLayers{ 0 };
+        VkResult result = vkEnumerateInstanceLayerProperties(
+            &numLayers,
+            nullptr
+        );
+
+        if(result != VK_SUCCESS || numLayers == 0) {
+            logError("could not get any available instance layers");
+            return {};
+        }
+
+        instanceAvailableLayers = allocator.allocate<VkLayerProperties>(numLayers);
+
+        result = vkEnumerateInstanceLayerProperties(
+            &numLayers,
+            instanceAvailableLayers.data()
+        );
+
+        if(result != VK_SUCCESS || instanceAvailableLayers.empty()) {
+            logError("could not get any available instance layers");
+        }
+
+        return instanceAvailableLayers;
+    }
+
+    std::span<const VkExtensionProperties> queryAvailableInstanceExtensionProperties() noexcept {
+        core::u32 numExtensions{ 0 };
+        VkResult result = vkEnumerateInstanceExtensionProperties(
+            nullptr,
+            &numExtensions,
+            nullptr
+        );
+
+        if(result != VK_SUCCESS || numExtensions == 0) {
+            logError("could not get any available instance extensions");
+            return {};
+        }
+
+        instanceAvailableExtensions = allocator.allocate<VkExtensionProperties>(numExtensions);
+
+        result = vkEnumerateInstanceExtensionProperties(
+            nullptr,
+            &numExtensions,
+            instanceAvailableExtensions.data()
+        );
+
+        if(result != VK_SUCCESS || instanceAvailableLayers.empty()) {
+            logError("could not get any available instance layers");
+        }
+
+        return instanceAvailableExtensions;
+    }
+
+    [[nodiscard]] std::optional<const VkInstance> createInstance(
+        const char* applicationName,
+        const char* engineName,
+        const core::u32 apiVersion,
+        std::initializer_list<const char *> layerNames,
+        std::initializer_list<const char *> extensionNames)
+    {
+        VkApplicationInfo appInfo{
+            VK_STRUCTURE_TYPE_APPLICATION_INFO,
+            nullptr,
+            applicationName,
+            0,
+            engineName,
+            apiVersion
+        };
+
+        // flags check
+        core::u32 flags{ 0 };
+        if(std::ranges::find(extensionNames, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME) != layerNames.end()) {
+            flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+            logInfo("extension VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME requested for new instance");
+        }
+
+        // Layers: []
+        const core::u32 numLayers = layerNames.size();
+        const char* const* ppLayerNames { layerNames.begin() };
+        const core::u32 numExtensions = extensionNames.size();
+        const char* const* ppExtensionNames { extensionNames.begin() };
+        const VkInstanceCreateInfo createInfo {
+            VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,             // sType
+            nullptr,                                            // pNext
+            VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR,   // flags
+            &appInfo,                                           // pApplicationInfo
+            numLayers,                                          // enabledLayerCount
+            ppLayerNames,                                       // ppEnabledLayerNames
+            numExtensions,                                      // enabledExtensionCount
+            ppExtensionNames                                    // ppEnabledExtensionNames
+        };
+
+        // Create Vulkan Instance
+        const VkAllocationCallbacks* pHostMemoryAllocator = nullptr; // use Vulkan's internal allocator
+        VkAllocationCallbacks allocationCallbacks {
+            nullptr,
+            nullptr,
+            nullptr,
+            nullptr,
+            &Configurator::allocationNotification,
+            &Configurator::freeNotification
+        };
+        VkInstance vulkanInstance;
+        VkResult res = vkCreateInstance(
+            &createInfo,
+            nullptr, // &allocationCallbacks,
+            &vulkanInstance
+        );
+
+        if(res != VK_SUCCESS) {
+            logError("could not create vulkan instance");
+            return std::nullopt;
+        }
+
+        logInfo("created instance");
+        instance = vulkanInstance;
+        return instance;
+    }
 
 };
 

@@ -1,3 +1,4 @@
+// context.hpp: gpu runtime context: manage devices, buffers, images, queues
 #pragma once
 
 #include "core/memory/stack_allocator.hpp"
