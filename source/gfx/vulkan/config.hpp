@@ -133,6 +133,12 @@ public:
         // device-level extensions
         physicalDeviceExtensionProps = other.physicalDeviceExtensionProps;
 
+        // enabled extensions layers and extensions
+        instanceRequestedLayers = other.instanceRequestedLayers;
+        instanceRequestedLayersData = other.instanceRequestedLayersData;
+        instanceRequestedExtensions = other.instanceRequestedExtensions;
+        instanceRequestedExtensionsData = other.instanceRequestedExtensionsData;
+
         // invalidate other's instance
         other.instance = std::nullopt;
     }
@@ -212,6 +218,14 @@ public:
         const std::size_t length = queueFamilyPropertiesOffsets[*deviceIndex].length;
 
         return queueFamilyProperties.subspan(offset, length);
+    }
+
+    std::span<char* const> getEnabledExtensionNames() const noexcept {
+        return instanceRequestedExtensions;
+    }
+
+    std::span<char* const> getEnabledLayerNames() const noexcept {
+        return instanceRequestedLayers;
     }
 
 private:
@@ -625,6 +639,7 @@ private:
             ++ptrIndex;
             writeIndex += VK_MAX_EXTENSION_NAME_SIZE;
         }
+
         // write the optional extensions we support
         for(const char * name : optionalExtensionNames) {
             // just loop back through the supported Extensions

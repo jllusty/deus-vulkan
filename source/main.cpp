@@ -33,7 +33,7 @@ int main()
     // Vulkan Configurator
     gfx::vulkan::InstanceRequest instanceRequest {
         .requiredLayerNames = { gfx::vulkan::VK_LAYER_KHRONOS_VALIDATION_NAME },
-        .requiredExtensionNames = { VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME },
+        .requiredExtensionNames = { VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME },
         .optionalLayerNames = { "VK_LAYER_KHRONOS_shader_object", "VK_LAYER_LUNARG_api_dump" },
         .optionalExtensionNames = {},
     };
