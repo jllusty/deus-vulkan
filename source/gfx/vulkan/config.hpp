@@ -17,10 +17,10 @@
 namespace gfx::vulkan {
 
 struct InstanceRequest {
-    std::span<const char* const> requiredLayerNames;
-    std::span<const char* const> requiredExtensionNames;
-    std::span<const char* const> optionalLayerNames;
-    std::span<const char* const> optionalExtensionNames;
+    std::initializer_list<const char*> requiredLayerNames;
+    std::initializer_list<const char*> requiredExtensionNames;
+    std::initializer_list<const char*> optionalLayerNames;
+    std::initializer_list<const char*> optionalExtensionNames;
 };
 
 // supports configuring a single vulkan instance
@@ -34,8 +34,10 @@ class Configurator {
     std::span<VkLayerProperties> instanceAvailableLayers{};
     std::span<VkExtensionProperties> instanceAvailableExtensions{};
 
+    // vulkan instance
     std::optional<VkInstance> instance{};
 
+    // enumerated physical devices and their properties
     std::span<VkPhysicalDevice> physicalDevices{};
     std::span<VkPhysicalDeviceProperties> physicalDeviceProps{};
     std::span<VkPhysicalDeviceMemoryProperties> physicalDeviceMemoryProps{};
@@ -43,6 +45,14 @@ class Configurator {
     // a single physical device can be associated with multiple queues
     std::span<core::memory::ArrayOffset> queueFamilyPropertiesOffsets{};
     std::span<VkQueueFamilyProperties> queueFamilyProperties{};
+
+    // layers/extension names to request from vulkan on instance creation
+    // contigous sequence of char ptrs to pass to vulkan
+    std::span<char*> instanceRequestedLayers{};
+    std::span<char*> instanceRequestedExtensions{};
+    // underlying data for the requested layer and extension names
+    std::span<char> instanceRequestedLayersData{};
+    std::span<char> instanceRequestedExtensionsData{};
 
     // device-level extensions
     std::span<VkExtensionProperties> physicalDeviceExtensionProps{};
@@ -59,30 +69,35 @@ public:
         Configurator config(region, log);
 
         // instance-level vulkan api
-        std::optional<core::u32> availableInstanceAPI = config.queryAvailableInstanceVersion();
+        std::optional<core::u32> availableInstanceAPI = config.enumerateAvailableInstanceVersion();
         if(!availableInstanceAPI) {
-            log.error("vulkan/config","could not retrieve vulkan api version");
+            log.error("vulkan/config-create","could not retrieve vulkan api version");
             return std::nullopt;
         }
         config.apiVersion = *availableInstanceAPI;
 
-        // query, store, and return available instance-level layers and extensions
-        std::span<const VkLayerProperties> layerProps = config.queryAvailableInstanceLayerProperties();
-        std::span<const VkExtensionProperties> extensionProps = config.queryAvailableInstanceExtensionProperties();
+        // enumerate, store, and return available instance-level layers and extensions
+        std::span<const VkLayerProperties> layerProps = config.enumerateAvailableInstanceLayerProperties();
+        std::span<const VkExtensionProperties> extensionProps = config.enumerateAvailableInstanceExtensionProperties();
+
+        // enumerate, store, and return requestable instance-level layer names
+        std::span<char* const> requestableLayerNames = config.enumerateRequestableLayerNames(
+            request.requiredLayerNames, request.optionalLayerNames
+        );
+        std::span<char* const> requestableExtensionNames = config.enumerateRequestableExtensionNames(
+            request.requiredExtensionNames, request.optionalExtensionNames
+        );
 
         std::optional<const VkInstance> createdInstance = config.createInstance(
             "Vulkan Application",
-            "deus-vulkan",
-            *availableInstanceAPI,
-            {},
-            { VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME }
+            "deus-vulkan"
         );
         if(!createdInstance.has_value()) {
             log.error("vulkan/config", "failed to create vulkan instance");
             return std::nullopt;
         }
 
-        // query, store, and return device properties, memory, and queues
+        // enumerate, store, and return device properties, memory, and queues
         std::span<const VkPhysicalDevice> physicalDevices = config.enumeratePhysicalDevices();
         std::span<const VkPhysicalDeviceProperties> deviceProps = config.enumeratePhysicalDeviceProperties();
         std::span<const VkPhysicalDeviceMemoryProperties> deviceMemoryProps = config.enumeratePhysicalDeviceMemoryProperties();
@@ -138,7 +153,7 @@ public:
         return physicalDevices;
     }
 
-    // methods for querying devices and or device/queue properties
+    // methods for enumerateing devices and or device/queue properties
     // todo: pick a device based on optional and required features
     std::optional<const VkPhysicalDevice> getBestPhysicalDevice() const noexcept {
         if(physicalDevices.empty()) {
@@ -398,7 +413,7 @@ private:
     // there is no way in vulkan 1.0 to even ask if 1.0 is supported
     // we just have to infer based on the lack of vkEnumerateInstanceVersion
     // which was introduced in 1.1
-    std::optional<const core::u32> queryAvailableInstanceVersion() noexcept {
+    std::optional<const core::u32> enumerateAvailableInstanceVersion() noexcept {
         // we know the signture of vkEnumerateInstanceVersion, should it exist
         PFN_vkVoidFunction vkEnumerateInstanceVersionPtr = vkGetInstanceProcAddr(
             nullptr,
@@ -425,7 +440,7 @@ private:
         return VK_VERSION_1_0;
     }
 
-    std::span<const VkLayerProperties> queryAvailableInstanceLayerProperties() noexcept {
+    std::span<const VkLayerProperties> enumerateAvailableInstanceLayerProperties() noexcept {
         core::u32 numLayers{ 0 };
         VkResult result = vkEnumerateInstanceLayerProperties(
             &numLayers,
@@ -451,7 +466,7 @@ private:
         return instanceAvailableLayers;
     }
 
-    std::span<const VkExtensionProperties> queryAvailableInstanceExtensionProperties() noexcept {
+    std::span<const VkExtensionProperties> enumerateAvailableInstanceExtensionProperties() noexcept {
         core::u32 numExtensions{ 0 };
         VkResult result = vkEnumerateInstanceExtensionProperties(
             nullptr,
@@ -479,12 +494,159 @@ private:
         return instanceAvailableExtensions;
     }
 
+    // check what required names we need to encode in our instance creation request
+    // as well as what optional names we could encode
+    std::span<char* const> enumerateRequestableLayerNames(
+        std::initializer_list<const char*> requiredLayerNames,
+        std::initializer_list<const char*> optionalLayerNames
+    )
+    {
+        // count the number of required layers we can use for instance specification: if we can't use them, failover
+        std::size_t numLayersToRequest{ 0 };
+        for(const char * name : requiredLayerNames) {
+            bool requiredLayerNameUsed = false;
+            for(const VkLayerProperties prop : instanceAvailableLayers) {
+                if(std::strcmp(prop.layerName,name) == 0) {
+                    ++numLayersToRequest;
+                    requiredLayerNameUsed = true;
+                }
+            }
+            if(!requiredLayerNameUsed) {
+                log.error("vulkan/config-create","could not use requested optional layer '%s' for instance creation", name);
+                return {};
+            }
+        }
+
+        // count the number of usable layers
+        // optional layers: log to info if we can't use them, but do not failover
+        for(const char * name : optionalLayerNames) {
+            bool optionalLayerNameUsable{ false };
+            for(const VkLayerProperties prop : instanceAvailableLayers) {
+                if(std::strcmp(prop.layerName,name) == 0) {
+                    ++numLayersToRequest;
+                    optionalLayerNameUsable = true;
+                }
+            }
+            if(!optionalLayerNameUsable) {
+                // todo: better name for logging in this stage
+                log.info("vulkan/config-create","could not use requested optional layer '%s' for instance creation", name);
+            }
+        }
+
+        // allocate space for the layers to request at instance creation
+        instanceRequestedLayers = allocator.allocate<char*>(numLayersToRequest);
+        instanceRequestedLayersData = allocator.allocate<char>(
+            numLayersToRequest * VK_MAX_EXTENSION_NAME_SIZE
+        );
+        std::size_t ptrIndex{ 0 };
+        std::size_t writeIndex{ 0 };
+        // write the required layers
+        for(const char * name : requiredLayerNames) {
+            instanceRequestedLayers[ptrIndex] = instanceRequestedLayersData.data() + writeIndex;
+            std::strcpy(
+                instanceRequestedLayers[ptrIndex],
+                name
+            );
+            ++ptrIndex;
+            writeIndex += VK_MAX_EXTENSION_NAME_SIZE;
+        }
+        // write the optional layers we support
+        for(const char * name : optionalLayerNames) {
+            // just loop back through the supported layers
+            for(const VkLayerProperties prop : instanceAvailableLayers) {
+                if(std::strcmp(prop.layerName, name) == 0) {
+                    instanceRequestedLayers[ptrIndex] = instanceRequestedLayersData.data() + writeIndex;
+                    std::strcpy(
+                        instanceRequestedLayers[ptrIndex],
+                        name
+                    );
+                    ++ptrIndex;
+                    writeIndex += VK_MAX_EXTENSION_NAME_SIZE;
+                }
+            }
+        }
+
+        return instanceRequestedLayers;
+    }
+
+    // check what required names we need to encode in our instance creation request
+    // as well as what optional names we could encode
+    std::span<char* const> enumerateRequestableExtensionNames(
+        std::initializer_list<const char*> requiredExtensionNames,
+        std::initializer_list<const char*> optionalExtensionNames
+    )
+    {
+        // count the number of required extensions we can use for instance specification: if we can't use them, failover
+        std::size_t numExtensionsToRequest{ 0 };
+        for(const char * name : requiredExtensionNames) {
+            bool requiredExtensionNameUsed = false;
+            for(const VkExtensionProperties prop : instanceAvailableExtensions) {
+                if(std::strcmp(prop.extensionName,name) == 0) {
+                    ++numExtensionsToRequest;
+                    requiredExtensionNameUsed = true;
+                }
+            }
+            if(!requiredExtensionNameUsed) {
+                log.error("vulkan/config-create","could not use requested optional extension '%s' for instance creation", name);
+                return {};
+            }
+        }
+
+        // count the number of usable extensions
+        // optional extensions: log to info if we can't use them, but do not failover
+        for(const char * name : optionalExtensionNames) {
+            bool optionalExtensionNameUsable{ false };
+            for(const VkExtensionProperties prop : instanceAvailableExtensions) {
+                if(std::strcmp(prop.extensionName,name) == 0) {
+                    ++numExtensionsToRequest;
+                    optionalExtensionNameUsable = true;
+                }
+            }
+            if(!optionalExtensionNameUsable) {
+                // todo: better name for logging in this stage
+                log.info("vulkan/config-create","could not use requested optional extension '%s' for instance creation", name);
+            }
+        }
+
+        // allocate space for the extensions to request at instance creation
+        instanceRequestedExtensions = allocator.allocate<char*>(numExtensionsToRequest);
+        instanceRequestedExtensionsData = allocator.allocate<char>(
+            numExtensionsToRequest * VK_MAX_EXTENSION_NAME_SIZE
+        );
+        std::size_t ptrIndex{ 0 };
+        std::size_t writeIndex{ 0 };
+        // write the required extensions
+        for(const char * name : requiredExtensionNames) {
+            instanceRequestedExtensions[ptrIndex] = instanceRequestedExtensionsData.data() + writeIndex;
+            std::strcpy(
+                instanceRequestedExtensions[ptrIndex],
+                name
+            );
+            ++ptrIndex;
+            writeIndex += VK_MAX_EXTENSION_NAME_SIZE;
+        }
+        // write the optional extensions we support
+        for(const char * name : optionalExtensionNames) {
+            // just loop back through the supported Extensions
+            for(const VkExtensionProperties prop : instanceAvailableExtensions) {
+                if(std::strcmp(prop.extensionName, name) == 0) {
+                    instanceRequestedExtensions[ptrIndex] = instanceRequestedExtensionsData.data() + writeIndex;
+                    std::strcpy(
+                        instanceRequestedExtensions[ptrIndex],
+                        name
+                    );
+                    ++ptrIndex;
+                    writeIndex += VK_MAX_EXTENSION_NAME_SIZE;
+                }
+            }
+        }
+
+        return instanceRequestedExtensions;
+    }
+
     [[nodiscard]] std::optional<const VkInstance> createInstance(
         const char* applicationName,
-        const char* engineName,
-        const core::u32 apiVersion,
-        std::initializer_list<const char *> layerNames,
-        std::initializer_list<const char *> extensionNames)
+        const char* engineName)
     {
         VkApplicationInfo appInfo{
             VK_STRUCTURE_TYPE_APPLICATION_INFO,
@@ -492,30 +654,27 @@ private:
             applicationName,
             0,
             engineName,
-            apiVersion
+            *apiVersion
         };
 
         // flags check
         core::u32 flags{ 0 };
-        if(std::ranges::find(extensionNames, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME) != layerNames.end()) {
-            flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
-            logInfo("extension VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME requested for new instance");
+        for(const char * extensionName : instanceRequestedExtensions) {
+            if(strcmp(extensionName, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME) == 0) {
+                flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+                logInfo("extension VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME requested for new instance: portability bit set for instance creation flags");
+            }
         }
 
-        // Layers: []
-        const core::u32 numLayers = layerNames.size();
-        const char* const* ppLayerNames { layerNames.begin() };
-        const core::u32 numExtensions = extensionNames.size();
-        const char* const* ppExtensionNames { extensionNames.begin() };
         const VkInstanceCreateInfo createInfo {
-            VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,             // sType
-            nullptr,                                            // pNext
-            VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR,   // flags
-            &appInfo,                                           // pApplicationInfo
-            numLayers,                                          // enabledLayerCount
-            ppLayerNames,                                       // ppEnabledLayerNames
-            numExtensions,                                      // enabledExtensionCount
-            ppExtensionNames                                    // ppEnabledExtensionNames
+            .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = flags,
+            .pApplicationInfo = &appInfo,
+            .enabledLayerCount = static_cast<core::u32>(instanceRequestedLayers.size()),
+            .ppEnabledLayerNames = instanceRequestedLayers.data(),
+            .enabledExtensionCount = static_cast<core::u32>(instanceRequestedExtensions.size()),
+            .ppEnabledExtensionNames = instanceRequestedExtensions.data()
         };
 
         // Create Vulkan Instance

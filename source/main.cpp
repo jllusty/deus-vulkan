@@ -7,11 +7,11 @@
 #include <SFML/Window.hpp>
 #include <vulkan/vulkan_core.h>
 
-#include "core/types.hpp"
 #include "core/memory/base_allocator.hpp"
 #include "core/memory/types.hpp"
 #include "core/log/logging.hpp"
 
+#include "gfx/vulkan/constants.hpp"
 #include "gfx/vulkan/config.hpp"
 #include "gfx/vulkan/context.hpp"
 
@@ -32,9 +32,9 @@ int main()
 
     // Vulkan Configurator
     gfx::vulkan::InstanceRequest instanceRequest {
-        .requiredLayerNames = {},
-        .requiredExtensionNames = {},
-        .optionalLayerNames = {},
+        .requiredLayerNames = { gfx::vulkan::VK_LAYER_KHRONOS_VALIDATION_NAME },
+        .requiredExtensionNames = { VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME },
+        .optionalLayerNames = { "VK_LAYER_KHRONOS_shader_object", "VK_LAYER_LUNARG_api_dump" },
         .optionalExtensionNames = {},
     };
     std::optional<gfx::vulkan::Configurator> optConfig = gfx::vulkan::Configurator::create(regionVulkanConfig, instanceRequest, log);
