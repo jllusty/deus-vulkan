@@ -31,38 +31,18 @@ int main()
     core::log::Logger log(regionLog);
 
     // Vulkan Configurator
-    gfx::vulkan::Configurator config(regionVulkanConfig, log);
-
-    // instance-level vulkan api
-    auto availableInstanceAPI = config.getAvailableInstanceVersion();
-    if(!availableInstanceAPI) {
-        log.error("main", "could not retrieve vulkan api version");
+    gfx::vulkan::InstanceRequest instanceRequest {
+        .requiredLayerNames = {},
+        .requiredExtensionNames = {},
+        .optionalLayerNames = {},
+        .optionalExtensionNames = {},
+    };
+    std::optional<gfx::vulkan::Configurator> optConfig = gfx::vulkan::Configurator::create(regionVulkanConfig, instanceRequest, log);
+    if(!optConfig.has_value()) {
+        log.error("main","could not configurate vulkan");
         return -1;
     }
-    core::u32 apiVersion = *availableInstanceAPI;
-
-    // available instance-level layers and extensions
-    std::span<const VkLayerProperties> layerProps = config.getAvailableInstanceLayerProperties();
-    std::span<const VkExtensionProperties> extensionProps = config.getAvailableInstanceExtensionProperties();
-
-    std::optional<const VkInstance> createdInstance = config.createInstance(
-        "Vulkan Application",
-        "deus-vulkan",
-        apiVersion,
-        {},
-        { VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME }
-    );
-    if(!createdInstance.has_value()) {
-        log.error("main", "failed to create vulkan instance");
-        return -1;
-    }
-    const VkInstance instance = *createdInstance;
-
-    // query device properties, memory, and queues
-    std::span<const VkPhysicalDevice> physicalDevices = config.enumeratePhysicalDevices();
-    std::span<const VkPhysicalDeviceProperties> deviceProps = config.enumeratePhysicalDeviceProperties();
-    std::span<const VkPhysicalDeviceMemoryProperties> deviceMemoryProps = config.enumeratePhysicalDeviceMemoryProperties();
-    std::span<const VkQueueFamilyProperties> queueFamilyProps = config.enumerateQueueFamilyProperties();
+    const gfx::vulkan::Configurator& config = *optConfig;
 
     // pick a physical device
     std::optional<const VkPhysicalDevice> bestPhysicalDevice = config.getBestPhysicalDevice();
@@ -74,9 +54,6 @@ int main()
 
     log.info("main","I chose physical device %d", reinterpret_cast<std::size_t>(physicalDevice));
 
-    // device-level extensions
-    std::span<const VkExtensionProperties> deviceExtensions = config.getAvailableDeviceExtensionProperties(physicalDevice);
-
     // create gpu context
     gfx::vulkan::GpuContext context {
         regionVulkanContext,
@@ -87,7 +64,6 @@ int main()
 
     // destruction order: devices -> instance
     bool destroyDevices = context.destroyDevices();
-    bool destroyInstance = config.destroyInstance();
 
     return 0;
 }
