@@ -27,7 +27,6 @@ int main()
     core::memory::Region regionVulkanContext = baseAllocator.reserve(1024 * 1024);
 
     // Logging
-    int val = 3, uval = -3;
     core::log::Logger log(regionLog);
 
     // Vulkan Configurator
@@ -58,10 +57,15 @@ int main()
         log,
         config
     };
-    std::span<const VkDevice> devices = context.createDevices(physicalDevice);
 
-    // destruction order: devices -> instance
+    std::span<const VkDevice> devices = context.createDevices(physicalDevice);
+    const VkBuffer* buffer = context.createBuffer(1024 * 1024);
+
+    // destruction order: buffers -> devices -> instance
+    context.destroyBuffers();
     bool destroyDevices = context.destroyDevices();
+
+    // instance destroyed on config dropping out of scope
 
     return 0;
 }

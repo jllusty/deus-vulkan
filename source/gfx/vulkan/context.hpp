@@ -4,6 +4,7 @@
 #include "core/memory/stack_allocator.hpp"
 #include "core/log/logging.hpp"
 #include "gfx/vulkan/config.hpp"
+#include <vulkan/vulkan_core.h>
 
 namespace gfx::vulkan {
 
@@ -61,6 +62,7 @@ public:
                     extensionNames[ptrIndex],
                     "VK_KHR_portability_subset" // todo: add to constants?
                 );
+                logInfo("config instance has VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME enabled, adding VK_KHR_portability_subset to device extension create info");
             }
         }
 
@@ -116,6 +118,46 @@ public:
         devices = {};
         logInfo("destroyed all logical devices");
         return true;
+    }
+
+    void destroyBuffers() noexcept {
+        for(std::size_t i = 0; i < buffers.size(); ++i) {
+            vkDestroyBuffer(
+                devices[i],
+                buffers[i],
+                nullptr
+            );
+        }
+
+        buffers = {};
+        logInfo("destroyed all buffers");
+    }
+
+    const VkBuffer* createBuffer(core::u32 sizeBytes) noexcept {
+        const VkBufferCreateInfo bufferCreateInfo {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .size = sizeBytes,
+            .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+            .queueFamilyIndexCount = 0,
+            .pQueueFamilyIndices = nullptr
+        };
+
+        buffers = allocator.allocate<VkBuffer>(1);
+        VkResult result = vkCreateBuffer(
+            devices.front(),
+            &bufferCreateInfo,
+            nullptr,
+            buffers.data()
+        );
+
+        if(result != VK_SUCCESS) {
+            log.error("main", "buffer creation failed\n");
+        }
+
+        return buffers.data();
     }
 
 private:
