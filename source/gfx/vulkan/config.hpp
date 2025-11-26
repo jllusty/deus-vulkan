@@ -71,7 +71,7 @@ public:
         // instance-level vulkan api
         std::optional<core::u32> availableInstanceAPI = config.enumerateAvailableInstanceVersion();
         if(!availableInstanceAPI) {
-            log.error("vulkan/config-create","could not retrieve vulkan api version");
+            config.logError("could not retrieve vulkan api version");
             return std::nullopt;
         }
         config.apiVersion = *availableInstanceAPI;
@@ -93,7 +93,7 @@ public:
             "deus-vulkan"
         );
         if(!createdInstance.has_value()) {
-            log.error("vulkan/config", "failed to create vulkan instance");
+            config.logError("failed to create vulkan instance");
             return std::nullopt;
         }
 
@@ -445,7 +445,14 @@ private:
                 return std::nullopt;
             }
 
+            logInfo("vkEnumerateInstanceVersion returned vulkan %d.%d",
+                VK_VERSION_MAJOR(version),
+                VK_VERSION_MINOR(version)
+            );
             return version;
+        }
+        else {
+            logInfo("vkEnumerateInstanceVersion does not exist, using vulkan 1.0");
         }
 
         // we must assume that if we did not get a valid function pointer from vulkan on
@@ -526,7 +533,7 @@ private:
                 }
             }
             if(!requiredLayerNameUsed) {
-                log.error("vulkan/config-create","could not use requested optional layer '%s' for instance creation", name);
+                logError("could not use requested optional layer '%s' for instance creation", name);
                 return {};
             }
         }
@@ -543,7 +550,7 @@ private:
             }
             if(!optionalLayerNameUsable) {
                 // todo: better name for logging in this stage
-                log.info("vulkan/config-create","could not use requested optional layer '%s' for instance creation", name);
+                logInfo("could not use requested optional layer '%s' for instance creation", name);
             }
         }
 
@@ -693,6 +700,7 @@ private:
         };
 
         // Create Vulkan Instance
+        // todo: pass an allocator
         const VkAllocationCallbacks* pHostMemoryAllocator = nullptr; // use Vulkan's internal allocator
         VkAllocationCallbacks allocationCallbacks {
             nullptr,
