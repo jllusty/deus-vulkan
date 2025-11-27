@@ -7,6 +7,8 @@
 #include <SFML/Window.hpp>
 #include <vulkan/vulkan_core.h>
 
+#include "gfx/geometry/grid_mesh.hpp"
+
 #include "engine/world/chunk.hpp"
 #include "engine/world/chunk_data.hpp"
 #include "engine/world/chunk_pool.hpp"
@@ -33,6 +35,9 @@ int main()
 
     // Logging
     core::log::Logger log(regionLog);
+
+    // Mesh Generator
+    gfx::geometry::GridMesh gridMesh = gfx::geometry::MeshGenerator::createGridMesh(engine::world::CHUNK_RESOLUTION);
 
     // Chunking System
     using namespace engine::world;
