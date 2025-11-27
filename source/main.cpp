@@ -7,6 +7,10 @@
 #include <SFML/Window.hpp>
 #include <vulkan/vulkan_core.h>
 
+#include "engine/world/chunk.hpp"
+#include "engine/world/chunk_data.hpp"
+#include "engine/world/chunk_pool.hpp"
+
 #include "core/memory/base_allocator.hpp"
 #include "core/memory/types.hpp"
 #include "core/log/logging.hpp"
@@ -23,12 +27,34 @@ int main()
 
     // subsystem call: create a memory region with the right size from the shared base allocator
     core::memory::Region regionLog = baseAllocator.reserve(1024 * 1024);
+    core::memory::Region regionChonker = baseAllocator.reserve(1024 * 1024);
     core::memory::Region regionVulkanConfig = baseAllocator.reserve(1024 * 1024);
     core::memory::Region regionVulkanContext = baseAllocator.reserve(1024 * 1024);
 
     // Logging
     core::log::Logger log(regionLog);
 
+    // Chunking System
+    using namespace engine::world;
+    ChunkPool chunkPool(64);
+    float2 posXZ{ .x = 134.f, .y = -63.f};
+    Chunk playerChunk = worldPositionXZToChunk(posXZ);
+    ChunkData* pPlayerChunk = chunkPool.load(playerChunk);
+    // load in chunks around the player
+    for(int dx = -1; dx <= 1; ++dx) {
+        for(int dz = -1; dz <= 1; ++dz) {
+            Chunk adjacentChunk = playerChunk;
+            adjacentChunk.x += dx;
+            adjacentChunk.z += dz;
+            // if dx == 0 and dz == 0, this will do nothing since we already
+            // loaded that chunk
+            ChunkData* pAdjacentChunk = chunkPool.load(adjacentChunk);
+        }
+    }
+
+    chunkPool.unload(playerChunk);
+
+    // Pool Allocator
     // Vulkan Configurator
     gfx::vulkan::InstanceRequest instanceRequest {
         .requiredLayerNames = { gfx::vulkan::VK_LAYER_KHRONOS_VALIDATION_NAME },

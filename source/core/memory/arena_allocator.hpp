@@ -11,7 +11,7 @@ class ArenaAllocator {
     std::size_t offset{ 0 };
 
 public:
-    ArenaAllocator() = delete;
+    ArenaAllocator() {}
 
     ArenaAllocator(Region region)
         : region(region)
@@ -32,7 +32,7 @@ public:
     [[nodiscard]] std::span<T> allocate(std::size_t elements) {
         if(offset + elements > region.size()) {
             // todo: log this
-            return nullptr;
+            return {};
         }
         const std::size_t current = offset;
         offset += elements;
