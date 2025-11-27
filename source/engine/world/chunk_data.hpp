@@ -6,9 +6,18 @@
 
 namespace engine::world {
 
-struct ChunkData {
-    Chunk chunk{};
+enum class ChunkStatus : core::u32 {
+    Unloaded = 0,
+    Loading = 1,
+    Loaded = 2
+};
 
+struct ChunkData {
+    // chunk coordinate
+    Chunk chunk{};
+    // status
+    ChunkStatus status{ ChunkStatus::Unloaded };
+    // height map
     std::array<float, CHUNK_RESOLUTION * CHUNK_RESOLUTION> heights{};
 };
 

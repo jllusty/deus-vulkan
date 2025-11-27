@@ -65,6 +65,7 @@ public:
 
         ChunkData& chunkData = pool[poolIndex];
         chunkData.chunk = chunk;
+        chunkData.status = ChunkStatus::Loading;
         // chunkData.heights = ...
         return &chunkData;
     }
