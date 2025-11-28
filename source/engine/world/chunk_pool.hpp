@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+#include <optional>
 #include <span>
 #include <vector>
 #include <unordered_map>
@@ -11,6 +13,9 @@ namespace engine::world {
 class ChunkPool {
     // chunk pool
     std::vector<ChunkData> pool{};
+
+    // loaded
+    std::vector<std::atomic<ChunkStatus>> status{};
 
     // free stack, filled with indices into the chunk pool at init
     std::vector<std::size_t> loadable{};
@@ -26,11 +31,14 @@ class ChunkPool {
 
 public:
     ChunkPool(const std::size_t capacity)
+        : pool(capacity),
+          status(capacity),
+          loadedIndex(capacity)
     {
-        // pool of chunk data
-        pool.resize(capacity);
-        // pool index -> loaded list
-        loadedIndex.resize(capacity);
+        // set all chunks unloaded
+        for(std::size_t i = 0; i < status.size(); ++i) {
+            status[i] = ChunkStatus::Unloaded;
+        }
         // we can at most load all of our chunks
         loaded.reserve(capacity);
 
@@ -41,17 +49,12 @@ public:
         }
     }
 
-    // load: request pointer to ChunkData for a write
-    ChunkData* load(Chunk chunk) {
-        // already loaded?
-        if(chunkToLoaded.contains(chunk)) {
-            return &pool[chunkToLoaded[chunk]];
-        }
-
+    // load: request index to ChunkData pool for later reads
+    void request(Chunk chunk) {
         // out of space?
         // todo: eviction notice
         if(loadable.empty()) {
-            return nullptr;
+            return;
         }
         std::size_t poolIndex = loadable.back();
         loadable.pop_back();
@@ -67,7 +70,7 @@ public:
         chunkData.chunk = chunk;
         chunkData.status = ChunkStatus::Loading;
         // chunkData.heights = ...
-        return &chunkData;
+        return;
     }
 
     void unload(Chunk chunk) {
@@ -94,7 +97,37 @@ public:
         loadable.push_back(poolIndex);
     }
 
-    // todo: stream methods
+    std::span<const std::size_t> getRequestedChunkIds() const noexcept {
+        return loaded;
+    }
+
+    ChunkStatus getChunkStatus(Chunk chunk) const noexcept {
+        // if we haven't loaded the chunk yet, just return unloaded
+        if(!chunkToLoaded.contains(chunk)) {
+            return ChunkStatus::Unloaded;
+        }
+        std::size_t poolIndex = chunkToLoaded.at(chunk);
+        return status[poolIndex].load(std::memory_order_acquire);
+    }
+
+    void setChunkStatus(Chunk chunk, ChunkStatus s) noexcept {
+        if(!chunkToLoaded.contains(chunk)) {
+            return;
+        }
+        std::size_t poolIndex = chunkToLoaded.at(chunk);
+        status[poolIndex].store(s, std::memory_order_release);
+    }
+
+    std::optional<std::size_t> getPoolIndex(Chunk chunk) const noexcept {
+        if(chunkToLoaded.contains(chunk)) {
+            return chunkToLoaded.at(chunk);
+        }
+        return std::nullopt;
+    }
+
+    ChunkData& getChunkData(std::size_t poolIndex) noexcept {
+        return pool[poolIndex];
+    }
 };
 
 }

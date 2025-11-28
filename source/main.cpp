@@ -1,17 +1,18 @@
 // main.cpp
 
 #include <span>
+#include <chrono>
+#include <thread>
 
 #include <sys/wait.h>
 #include <vulkan/vulkan.h>
 #include <SFML/Window.hpp>
 #include <vulkan/vulkan_core.h>
 
+#include "engine/world/chunk.hpp"
 #include "gfx/geometry/grid_mesh.hpp"
 
-#include "engine/world/chunk.hpp"
-#include "engine/world/chunk_data.hpp"
-#include "engine/world/chunk_pool.hpp"
+#include "engine/world/chonker.hpp"
 
 #include "core/memory/base_allocator.hpp"
 #include "core/memory/types.hpp"
@@ -39,25 +40,17 @@ int main()
     // Mesh Generator
     gfx::geometry::GridMesh gridMesh = gfx::geometry::MeshGenerator::createGridMesh(engine::world::CHUNK_RESOLUTION);
 
-    // Chunking System
+    // Chunking System: Chonker
     using namespace engine::world;
-    ChunkPool chunkPool(64);
-    float2 posXZ{ .x = 134.f, .y = -63.f};
-    Chunk playerChunk = worldPositionXZToChunk(posXZ);
-    ChunkData* pPlayerChunk = chunkPool.load(playerChunk);
-    // load in chunks around the player
-    for(int dx = -1; dx <= 1; ++dx) {
-        for(int dz = -1; dz <= 1; ++dz) {
-            Chunk adjacentChunk = playerChunk;
-            adjacentChunk.x += dx;
-            adjacentChunk.z += dz;
-            // if dx == 0 and dz == 0, this will do nothing since we already
-            // loaded that chunk
-            ChunkData* pAdjacentChunk = chunkPool.load(adjacentChunk);
-        }
+    constexpr const std::size_t capacity = 64;
+    Chonker chonker(capacity);
+    float2 playerPosition{ 152.f, -300.f };
+    Chunk playerChunk = worldPositionXZToChunk(playerPosition);
+    chonker.request(playerChunk);
+    while(chonker.getStatus(playerChunk) != ChunkStatus::Loaded) {
+        std::cout << "waiting on the writer thread\n";
     }
-
-    chunkPool.unload(playerChunk);
+    ChunkData* pChunkData = chonker.fetch(playerChunk);
 
     // Pool Allocator
     // Vulkan Configurator

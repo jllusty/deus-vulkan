@@ -16,9 +16,10 @@ struct ChunkData {
     // chunk coordinate
     Chunk chunk{};
     // status
+    // todo: list of atomic<bool> in the ChunkPool instead
     ChunkStatus status{ ChunkStatus::Unloaded };
-    // height map
-    std::array<float, CHUNK_RESOLUTION * CHUNK_RESOLUTION> heights{};
+    // height map (should be u16, but using i32 for testing)
+    std::array<core::i32, CHUNK_RESOLUTION * CHUNK_RESOLUTION> heights{};
 };
 
 inline float sampleChunkDataHeights(ChunkData& chunkData, int2 sampleCoords) {
