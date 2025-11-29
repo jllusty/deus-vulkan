@@ -2,19 +2,22 @@
 //     accepts an instance request, returns an instance and a bunch of
 #pragma once
 
+#include <vector>
+#include <string>
 #include <span>
 #include <optional>
 
-#include "core/memory/stack_allocator.hpp"
 #include "core/types.hpp"
-#include "core/memory/types.hpp"
-
-#include "core/memory/stack_allocator.hpp"
+#include "core/log/logging.hpp"
 
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>
 
 namespace gfx::vulkan {
+
+struct PhysicalDeviceHandle {
+    std::size_t id{};
+};
 
 struct InstanceRequest {
     std::initializer_list<const char*> requiredLayerNames;
@@ -25,37 +28,32 @@ struct InstanceRequest {
 
 // supports configuring a single vulkan instance
 class Configurator {
-    core::memory::StackAllocator allocator;
-
     // available version of vulkan api
     std::optional<core::u32> apiVersion{};
 
     // available layers and extensions for a VkInstance
-    std::span<VkLayerProperties> instanceAvailableLayers{};
-    std::span<VkExtensionProperties> instanceAvailableExtensions{};
+    std::vector<VkLayerProperties> instanceAvailableLayers{};
+    std::vector<VkExtensionProperties> instanceAvailableExtensions{};
 
     // vulkan instance
     std::optional<VkInstance> instance{};
 
+    // handle for physical devices - just an index to these internal arrays
+    std::vector<PhysicalDeviceHandle> physicalDeviceHandles{};
     // enumerated physical devices and their properties
-    std::span<VkPhysicalDevice> physicalDevices{};
-    std::span<VkPhysicalDeviceProperties> physicalDeviceProps{};
-    std::span<VkPhysicalDeviceMemoryProperties> physicalDeviceMemoryProps{};
+    std::vector<VkPhysicalDevice> physicalDevices{};
+    std::vector<VkPhysicalDeviceProperties> physicalDeviceProps{};
+    std::vector<VkPhysicalDeviceMemoryProperties> physicalDeviceMemoryProps{};
 
     // a single physical device can be associated with multiple queues
-    std::span<core::memory::ArrayOffset> queueFamilyPropertiesOffsets{};
-    std::span<VkQueueFamilyProperties> queueFamilyProperties{};
+    std::vector<std::vector<VkQueueFamilyProperties>> queueFamilyProperties{};
 
     // layers/extension names to request from vulkan on instance creation
-    // contigous sequence of char ptrs to pass to vulkan
-    std::span<char*> instanceRequestedLayers{};
-    std::span<char*> instanceRequestedExtensions{};
-    // underlying data for the requested layer and extension names
-    std::span<char> instanceRequestedLayersData{};
-    std::span<char> instanceRequestedExtensionsData{};
+    std::vector<std::string> instanceRequestedLayers{};
+    std::vector<std::string> instanceRequestedExtensions{};
 
     // device-level extensions
-    std::span<VkExtensionProperties> physicalDeviceExtensionProps{};
+    std::vector<VkExtensionProperties> physicalDeviceExtensionProps{};
 
     // logging
     core::log::Logger& log;
@@ -66,42 +64,41 @@ public:
         core::log::Logger& log) noexcept
     {
         // call private constructor
-        Configurator config(region, log);
+        Configurator config(log);
 
         // instance-level vulkan api
-        std::optional<core::u32> availableInstanceAPI = config.enumerateAvailableInstanceVersion();
-        if(!availableInstanceAPI) {
+        config.enumerateAvailableInstanceVersion();
+        if(!config.apiVersion.has_value()) {
             config.logError("could not retrieve vulkan api version");
             return std::nullopt;
         }
-        config.apiVersion = *availableInstanceAPI;
 
         // enumerate, store, and return available instance-level layers and extensions
-        std::span<const VkLayerProperties> layerProps = config.enumerateAvailableInstanceLayerProperties();
-        std::span<const VkExtensionProperties> extensionProps = config.enumerateAvailableInstanceExtensionProperties();
+        config.enumerateAvailableInstanceLayerProperties();
+        config.enumerateAvailableInstanceExtensionProperties();
 
         // enumerate, store, and return requestable instance-level layer names
-        std::span<char* const> requestableLayerNames = config.enumerateRequestableLayerNames(
+        config.enumerateRequestableLayerNames(
             request.requiredLayerNames, request.optionalLayerNames
         );
-        std::span<char* const> requestableExtensionNames = config.enumerateRequestableExtensionNames(
+        config.enumerateRequestableExtensionNames(
             request.requiredExtensionNames, request.optionalExtensionNames
         );
 
-        std::optional<const VkInstance> createdInstance = config.createInstance(
+        config.createInstance(
             "Vulkan Application",
             "deus-vulkan"
         );
-        if(!createdInstance.has_value()) {
+        if(!config.instance.has_value()) {
             config.logError("failed to create vulkan instance");
             return std::nullopt;
         }
 
         // enumerate, store, and return device properties, memory, and queues
-        std::span<const VkPhysicalDevice> physicalDevices = config.enumeratePhysicalDevices();
-        std::span<const VkPhysicalDeviceProperties> deviceProps = config.enumeratePhysicalDeviceProperties();
-        std::span<const VkPhysicalDeviceMemoryProperties> deviceMemoryProps = config.enumeratePhysicalDeviceMemoryProperties();
-        std::span<const VkQueueFamilyProperties> queueFamilyProps = config.enumerateQueueFamilyProperties();
+        config.enumeratePhysicalDevices();
+        config.enumeratePhysicalDeviceProperties();
+        config.enumeratePhysicalDeviceMemoryProperties();
+        config.enumerateQueueFamilyProperties();
 
         // return a config with a properly set instance, invalidate the local temporary config's instance
         return std::move(config);
@@ -112,9 +109,9 @@ public:
     Configurator& operator=(const Configurator&) = delete;
 
     Configurator(Configurator&& other)
-        : allocator(other.allocator), log(other.log)
+        : log(other.log)
     {
-        apiVersion = other.apiVersion;
+        apiVersion = std::move(other.apiVersion);
 
         // available layers and extensions for a VkInstance
         instanceAvailableLayers = other.instanceAvailableLayers;
@@ -122,12 +119,12 @@ public:
 
         instance = std::move(other.instance);
 
+        physicalDeviceHandles = other.physicalDeviceHandles;
         physicalDevices = other.physicalDevices;
         physicalDeviceProps = other.physicalDeviceProps;
         physicalDeviceMemoryProps = other.physicalDeviceMemoryProps;
 
         // a single physical device can be associated with multiple queues
-        queueFamilyPropertiesOffsets = other.queueFamilyPropertiesOffsets;
         queueFamilyProperties = other.queueFamilyProperties;
 
         // device-level extensions
@@ -135,9 +132,7 @@ public:
 
         // enabled extensions layers and extensions
         instanceRequestedLayers = other.instanceRequestedLayers;
-        instanceRequestedLayersData = other.instanceRequestedLayersData;
         instanceRequestedExtensions = other.instanceRequestedExtensions;
-        instanceRequestedExtensionsData = other.instanceRequestedExtensionsData;
 
         // invalidate other's instance
         other.instance = std::nullopt;
@@ -155,100 +150,70 @@ public:
         logInfo("destroyed instance");
     }
 
-    constexpr std::span<const VkPhysicalDevice> getPhysicalDevices() const noexcept {
-        return physicalDevices;
+    constexpr std::optional<const VkPhysicalDevice> getVulkanPhysicalDevice(const PhysicalDeviceHandle physicalDevice) const noexcept {
+        return physicalDevices.at(physicalDevice.id);
+    }
+
+    constexpr std::span<const PhysicalDeviceHandle> getPhysicalDevices() const noexcept {
+        return physicalDeviceHandles;
     }
 
     // methods for enumerateing devices and or device/queue properties
     // todo: pick a device based on optional and required features
-    std::optional<const VkPhysicalDevice> getBestPhysicalDevice() const noexcept {
+    std::optional<const PhysicalDeviceHandle> getBestPhysicalDevice() const noexcept {
         if(physicalDevices.empty()) {
             return std::nullopt;
         }
         // just return the first one for now
-        return physicalDevices.front();
+        return physicalDeviceHandles.front();
     }
 
     // get device-level available extensions
-    std::span<const VkExtensionProperties> getAvailableDeviceExtensionProperties(const VkPhysicalDevice physicalDevice) const noexcept {
-        return physicalDeviceExtensionProps;
+    std::optional<const VkExtensionProperties> getAvailableDeviceExtensionProperties(const PhysicalDeviceHandle& physicalDevice) const noexcept {
+        if(physicalDeviceExtensionProps.empty()) {
+            return std::nullopt;
+        }
+        return physicalDeviceExtensionProps.at(physicalDevice.id);
     }
 
-    std::optional<const VkPhysicalDeviceProperties> getPhysicalDeviceProperties(const VkPhysicalDevice& physicalDevice) const noexcept {
-        if(physicalDevices.empty()) {
+    std::optional<const VkPhysicalDeviceProperties> getPhysicalDeviceProperties(const PhysicalDeviceHandle& physicalDevice) const noexcept {
+        if(physicalDeviceProps.empty()) {
             return std::nullopt;
         }
 
         // what is the queue family properties offset corresponding to that physical device?
-        std::optional<const std::size_t> deviceIndex = getPhysicalDeviceIndex(physicalDevice);
-        if(!deviceIndex.has_value()) {
-            return std::nullopt;
-        }
-
-        return physicalDeviceProps[*deviceIndex];
+        return physicalDeviceProps.at(physicalDevice.id);
     }
 
-    std::optional<const VkPhysicalDeviceMemoryProperties> getPhysicalDeviceMemoryProperties(const VkPhysicalDevice& physicalDevice) const noexcept {
-        if(physicalDevices.empty()) {
+    std::optional<const VkPhysicalDeviceMemoryProperties> getPhysicalDeviceMemoryProperties(const PhysicalDeviceHandle& physicalDevice) const noexcept {
+        if(physicalDeviceMemoryProps.empty()) {
             return std::nullopt;
         }
 
-        // what is the queue family properties offset corresponding to that physical device?
-        std::optional<const std::size_t> deviceIndex = getPhysicalDeviceIndex(physicalDevice);
-        if(!deviceIndex.has_value()) {
-            return std::nullopt;
-        }
-
-        return physicalDeviceMemoryProps[*deviceIndex];
+        return physicalDeviceMemoryProps.at(physicalDevice.id);
     }
 
-    std::span<const VkQueueFamilyProperties> getQueueFamilyProperties(const VkPhysicalDevice& physicalDevice) const noexcept {
-        if(physicalDevices.empty()) {
+    std::span<const VkQueueFamilyProperties> getQueueFamilyProperties(const PhysicalDeviceHandle& physicalDevice) const noexcept {
+        if(queueFamilyProperties.empty()) {
             return {};
         }
 
-        std::optional<const std::size_t> deviceIndex = getPhysicalDeviceIndex(physicalDevice);
-
-        if(!deviceIndex.has_value()) {
-            return {};
-        }
-
-        // what is the queue family properties offset corresponding to that physical device?
-        const std::size_t offset = queueFamilyPropertiesOffsets[*deviceIndex].offset;
-        const std::size_t length = queueFamilyPropertiesOffsets[*deviceIndex].length;
-
-        return queueFamilyProperties.subspan(offset, length);
+        return queueFamilyProperties.at(physicalDevice.id);
     }
 
-    std::span<char* const> getEnabledExtensionNames() const noexcept {
+    std::span<const std::string> getEnabledExtensionNames() const noexcept {
         return instanceRequestedExtensions;
     }
 
-    std::span<char* const> getEnabledLayerNames() const noexcept {
+    std::span<const std::string> getEnabledLayerNames() const noexcept {
         return instanceRequestedLayers;
     }
 
 private:
-    Configurator(core::memory::Region region, core::log::Logger& log)
-        : allocator(region), log(log)
+    Configurator(core::log::Logger& log)
+        : log(log)
     {
         // todo: custom vulkan allocator callbacks, inject pLogger calls
-    }
-
-    static void allocationNotification(void* pUserData, size_t size,
-            VkInternalAllocationType allocationType,
-            VkSystemAllocationScope allocationScope)
-    {
-        std::cout << "[vulkan/internal]: allocating " << size << " bytes\n";
-        std::cout.flush();
-    }
-
-    static void freeNotification(void* pUserData, size_t size,
-            VkInternalAllocationType allocationType,
-            VkSystemAllocationScope allocationScope)
-    {
-        std::cout << "[vulkan/internal]: freeing " << size << " bytes\n";
-        std::cout.flush();
     }
 
     // log convenience
@@ -267,27 +232,10 @@ private:
         log.info("vulkan/configurator", msg, std::forward<Args>(args)...);
     }
 
-    // get physical device index
-    std::optional<const std::size_t> getPhysicalDeviceIndex(const VkPhysicalDevice& physicalDevice) const noexcept {
-        std::size_t offset{ 0 };
-        bool foundOffset = false;
-        for(std::size_t deviceIndex = 0; deviceIndex < physicalDevices.size(); ++deviceIndex) {
-            if(physicalDevice == physicalDevices[deviceIndex]) {
-                offset = deviceIndex;
-                foundOffset = true;
-                break;
-            }
-        }
-        if(!foundOffset) {
-            return std::nullopt;
-        }
-        return offset;
-    }
-
-    std::span<const VkPhysicalDevice> enumeratePhysicalDevices() {
+    void enumeratePhysicalDevices() {
         if(!instance.has_value()) {
             logError("cannot enumerate physical devices without an instance");
-            return {};
+            return;
         }
 
         // enumerate physical devices
@@ -300,16 +248,15 @@ private:
 
         if(enumeratePhysicalDevicesResult != VK_SUCCESS) {
             logError("could not enumerate physical devices for configured instance");
-            return {};
+            return;
         }
         if(numPhysicalDevices == 0) {
             // todo: log this
             logError("no physical devices found");
-            return {};
+            return;
         }
 
-        physicalDevices = allocator.allocate<VkPhysicalDevice>(numPhysicalDevices);
-
+        physicalDevices.resize(numPhysicalDevices);
         enumeratePhysicalDevicesResult = vkEnumeratePhysicalDevices(
             *instance,
             &numPhysicalDevices,
@@ -317,85 +264,62 @@ private:
         );
 
         if(enumeratePhysicalDevicesResult != VK_SUCCESS) {
-            // todo: log this
             logError("could not enumerate physical devices for configured instance");
-            return {};
+            return;
         }
         if(physicalDevices.empty()) {
             logError("no physical devices found");
         }
 
+        // create list of physical device handles
+        for(std::size_t id = 0; id < numPhysicalDevices; ++id) {
+            physicalDeviceHandles.push_back({.id = id});
+        }
+
         logInfo("enumerated %d physical devices", numPhysicalDevices);
-        return physicalDevices;
     }
 
-    std::span<const VkPhysicalDeviceProperties> enumeratePhysicalDeviceProperties() noexcept {
+    void enumeratePhysicalDeviceProperties() noexcept {
         if(physicalDevices.empty()) {
-            logError("cannot enumerate physical device properties without enumerating physical devices");
-            return {};
+            logError("cannot enumerate physical device properties without first enumerating physical devices");
+            return;
         }
 
         // get physical device properties
-        physicalDeviceProps = allocator.allocate<VkPhysicalDeviceProperties>(physicalDevices.size());
-        for(std::size_t deviceIndex = 0; deviceIndex < physicalDevices.size(); ++deviceIndex) {
-            const VkPhysicalDevice& physicalDevice = physicalDevices[deviceIndex];
-
+        physicalDeviceProps.resize(physicalDevices.size());
+        for(const PhysicalDeviceHandle& physicalDeviceHandle : physicalDeviceHandles) {
+            const VkPhysicalDevice physicalDevice = physicalDevices.at(physicalDeviceHandle.id);
             vkGetPhysicalDeviceProperties(
                 physicalDevice,
-                &physicalDeviceProps[deviceIndex]
+                &physicalDeviceProps[physicalDeviceHandle.id]
             );
 
             if(physicalDeviceProps.empty()) {
                 logError("could not retrieve physical device properties for a physical device");
             }
         }
-        return physicalDeviceProps;
     }
 
-    std::span<const VkPhysicalDeviceMemoryProperties> enumeratePhysicalDeviceMemoryProperties() noexcept {
+    void enumeratePhysicalDeviceMemoryProperties() noexcept {
         if(physicalDevices.empty()) {
-            logError("no physical devices enumerated");
+            logError("cannot enumerate physical device memory properties without first enumerating physical devices");
         }
 
-        physicalDeviceMemoryProps = allocator.allocate<VkPhysicalDeviceMemoryProperties>(physicalDevices.size());
-        for(std::size_t deviceIndex = 0; deviceIndex < physicalDevices.size(); ++deviceIndex) {
-            const VkPhysicalDevice& physicalDevice = physicalDevices[deviceIndex];
+        physicalDeviceMemoryProps.resize(physicalDevices.size());
+        for(const PhysicalDeviceHandle& physicalDeviceHandle : physicalDeviceHandles) {
+            const VkPhysicalDevice physicalDevice = physicalDevices.at(physicalDeviceHandle.id);
             vkGetPhysicalDeviceMemoryProperties(
                 physicalDevice,
-                &physicalDeviceMemoryProps[deviceIndex]
+                &physicalDeviceMemoryProps[physicalDeviceHandle.id]
             );
-
-            const VkPhysicalDeviceMemoryProperties& props = physicalDeviceMemoryProps[deviceIndex];
         }
-
-        return physicalDeviceMemoryProps;
     }
 
-    std::span<const VkQueueFamilyProperties> enumerateQueueFamilyProperties() noexcept {
-        // prefetch: get the total size
-        std::size_t totalNumQueueFamilyProperties{ 0 };
-        for(std::size_t deviceIndex = 0; deviceIndex < physicalDevices.size(); ++deviceIndex) {
-            core::u32 numQueueFamilyProperties{ 0 };
-            vkGetPhysicalDeviceQueueFamilyProperties(
-                physicalDevices[deviceIndex],
-                &numQueueFamilyProperties,
-                nullptr
-            );
-            totalNumQueueFamilyProperties += static_cast<std::size_t>(numQueueFamilyProperties);
-        }
+    void enumerateQueueFamilyProperties() noexcept {
+        queueFamilyProperties.resize(physicalDevices.size());
+        for(const PhysicalDeviceHandle& physicalDeviceHandle : physicalDeviceHandles) {
+            const VkPhysicalDevice physicalDevice = physicalDevices.at(physicalDeviceHandle.id);
 
-        // allocate index array header
-        queueFamilyPropertiesOffsets = allocator.allocate<core::memory::ArrayOffset>(physicalDevices.size());
-
-        // allocate actual space for the family properties
-        queueFamilyProperties = allocator
-            .allocate<VkQueueFamilyProperties>(totalNumQueueFamilyProperties);
-
-        core::u32 currentNumQueueFamilyProperties{ 0 };
-        for(std::size_t deviceIndex = 0; deviceIndex < physicalDevices.size(); ++deviceIndex) {
-            const VkPhysicalDevice& physicalDevice = physicalDevices[deviceIndex];
-
-            // populate index array and allocator
             core::u32 numQueueFamilyProperties{ 0 };
             vkGetPhysicalDeviceQueueFamilyProperties(
                 physicalDevice,
@@ -403,31 +327,20 @@ private:
                 nullptr
             );
 
-            // set header offset and compute write location
-            core::memory::ArrayOffset& arrayOffset = queueFamilyPropertiesOffsets[deviceIndex];
-
-            arrayOffset.offset = currentNumQueueFamilyProperties;
-            arrayOffset.length = numQueueFamilyProperties;
-
-            VkQueueFamilyProperties& familyProps = queueFamilyProperties[currentNumQueueFamilyProperties];
+            queueFamilyProperties.at(physicalDeviceHandle.id).resize(numQueueFamilyProperties);
 
             vkGetPhysicalDeviceQueueFamilyProperties(
                 physicalDevice,
                 &numQueueFamilyProperties,
-                &familyProps
+                queueFamilyProperties[physicalDeviceHandle.id].data()
             );
-
-            // increment count
-            currentNumQueueFamilyProperties += numQueueFamilyProperties;
         }
-
-        return queueFamilyProperties;
     }
 
     // there is no way in vulkan 1.0 to even ask if 1.0 is supported
     // we just have to infer based on the lack of vkEnumerateInstanceVersion
     // which was introduced in 1.1
-    std::optional<const core::u32> enumerateAvailableInstanceVersion() noexcept {
+    void enumerateAvailableInstanceVersion() noexcept {
         // we know the signture of vkEnumerateInstanceVersion, should it exist
         PFN_vkVoidFunction vkEnumerateInstanceVersionPtr = vkGetInstanceProcAddr(
             nullptr,
@@ -442,26 +355,25 @@ private:
 
             if(result != VK_SUCCESS) {
                 logError("could not retrieve vulkan version >= 1.1");
-                return std::nullopt;
+                return;
             }
 
             logInfo("vkEnumerateInstanceVersion returned vulkan %d.%d",
                 VK_VERSION_MAJOR(version),
                 VK_VERSION_MINOR(version)
             );
-            return version;
+            apiVersion = version;
         }
-        else {
-            logInfo("vkEnumerateInstanceVersion does not exist, using vulkan 1.0");
-        }
+
+        logInfo("vkEnumerateInstanceVersion does not exist, using vulkan 1.0");
 
         // we must assume that if we did not get a valid function pointer from vulkan on
         // the first command call, it is because that function is not defined and we
         // are working with vulkan 1.0
-        return VK_VERSION_1_0;
+        apiVersion = VK_VERSION_1_0;
     }
 
-    std::span<const VkLayerProperties> enumerateAvailableInstanceLayerProperties() noexcept {
+    void enumerateAvailableInstanceLayerProperties() noexcept {
         core::u32 numLayers{ 0 };
         VkResult result = vkEnumerateInstanceLayerProperties(
             &numLayers,
@@ -470,10 +382,10 @@ private:
 
         if(result != VK_SUCCESS || numLayers == 0) {
             logError("could not get any available instance layers");
-            return {};
+            return;
         }
 
-        instanceAvailableLayers = allocator.allocate<VkLayerProperties>(numLayers);
+        instanceAvailableLayers.resize(numLayers);
 
         result = vkEnumerateInstanceLayerProperties(
             &numLayers,
@@ -483,11 +395,9 @@ private:
         if(result != VK_SUCCESS || instanceAvailableLayers.empty()) {
             logError("could not get any available instance layers");
         }
-
-        return instanceAvailableLayers;
     }
 
-    std::span<const VkExtensionProperties> enumerateAvailableInstanceExtensionProperties() noexcept {
+    void enumerateAvailableInstanceExtensionProperties() noexcept {
         core::u32 numExtensions{ 0 };
         VkResult result = vkEnumerateInstanceExtensionProperties(
             nullptr,
@@ -497,10 +407,9 @@ private:
 
         if(result != VK_SUCCESS || numExtensions == 0) {
             logError("could not get any available instance extensions");
-            return {};
         }
 
-        instanceAvailableExtensions = allocator.allocate<VkExtensionProperties>(numExtensions);
+        instanceAvailableExtensions.resize(numExtensions);
 
         result = vkEnumerateInstanceExtensionProperties(
             nullptr,
@@ -511,162 +420,89 @@ private:
         if(result != VK_SUCCESS || instanceAvailableLayers.empty()) {
             logError("could not get any available instance layers");
         }
-
-        return instanceAvailableExtensions;
     }
 
     // check what required names we need to encode in our instance creation request
     // as well as what optional names we could encode
-    std::span<char* const> enumerateRequestableLayerNames(
+    void enumerateRequestableLayerNames(
         std::initializer_list<const char*> requiredLayerNames,
         std::initializer_list<const char*> optionalLayerNames
     )
     {
-        // count the number of required layers we can use for instance specification: if we can't use them, failover
-        std::size_t numLayersToRequest{ 0 };
+        // ensure we can use the user-specified required layers we can use for instance specification
+        // if we can't use them, failover
         for(const char * name : requiredLayerNames) {
             bool requiredLayerNameUsed = false;
             for(const VkLayerProperties prop : instanceAvailableLayers) {
                 if(std::strcmp(prop.layerName,name) == 0) {
-                    ++numLayersToRequest;
+                    instanceRequestedLayers.push_back(name);
                     requiredLayerNameUsed = true;
                 }
             }
             if(!requiredLayerNameUsed) {
-                logError("could not use requested optional layer '%s' for instance creation", name);
-                return {};
+                logError("could not use requested required layer '%s' for instance creation", name);
+                instanceRequestedLayers.resize(0);
+                return;
             }
         }
 
-        // count the number of usable layers
-        // optional layers: log to info if we can't use them, but do not failover
+        // check if  we can use the user-specified optional layers we can use for instance specification
+        // if we can't use them, just report it
         for(const char * name : optionalLayerNames) {
             bool optionalLayerNameUsable{ false };
             for(const VkLayerProperties prop : instanceAvailableLayers) {
                 if(std::strcmp(prop.layerName,name) == 0) {
-                    ++numLayersToRequest;
+                    instanceRequestedLayers.push_back(name);
                     optionalLayerNameUsable = true;
                 }
             }
             if(!optionalLayerNameUsable) {
-                // todo: better name for logging in this stage
                 logInfo("could not use requested optional layer '%s' for instance creation", name);
             }
         }
-
-        // allocate space for the layers to request at instance creation
-        instanceRequestedLayers = allocator.allocate<char*>(numLayersToRequest);
-        instanceRequestedLayersData = allocator.allocate<char>(
-            numLayersToRequest * VK_MAX_EXTENSION_NAME_SIZE
-        );
-        std::size_t ptrIndex{ 0 };
-        std::size_t writeIndex{ 0 };
-        // write the required layers
-        for(const char * name : requiredLayerNames) {
-            instanceRequestedLayers[ptrIndex] = instanceRequestedLayersData.data() + writeIndex;
-            std::strcpy(
-                instanceRequestedLayers[ptrIndex],
-                name
-            );
-            ++ptrIndex;
-            writeIndex += VK_MAX_EXTENSION_NAME_SIZE;
-        }
-        // write the optional layers we support
-        for(const char * name : optionalLayerNames) {
-            // just loop back through the supported layers
-            for(const VkLayerProperties prop : instanceAvailableLayers) {
-                if(std::strcmp(prop.layerName, name) == 0) {
-                    instanceRequestedLayers[ptrIndex] = instanceRequestedLayersData.data() + writeIndex;
-                    std::strcpy(
-                        instanceRequestedLayers[ptrIndex],
-                        name
-                    );
-                    ++ptrIndex;
-                    writeIndex += VK_MAX_EXTENSION_NAME_SIZE;
-                }
-            }
-        }
-
-        return instanceRequestedLayers;
     }
 
     // check what required names we need to encode in our instance creation request
     // as well as what optional names we could encode
-    std::span<char* const> enumerateRequestableExtensionNames(
+    void enumerateRequestableExtensionNames(
         std::initializer_list<const char*> requiredExtensionNames,
         std::initializer_list<const char*> optionalExtensionNames
     )
     {
-        // count the number of required extensions we can use for instance specification: if we can't use them, failover
-        std::size_t numExtensionsToRequest{ 0 };
+        // ensure we can use the user-specified required extensions we can use for instance specification
+        // if we can't use them, failover
         for(const char * name : requiredExtensionNames) {
-            bool requiredExtensionNameUsed = false;
+            bool requiredExtensionNameUseable = false;
             for(const VkExtensionProperties prop : instanceAvailableExtensions) {
                 if(std::strcmp(prop.extensionName,name) == 0) {
-                    ++numExtensionsToRequest;
-                    requiredExtensionNameUsed = true;
+                    instanceRequestedExtensions.push_back(name);
+                    requiredExtensionNameUseable = true;
                 }
             }
-            if(!requiredExtensionNameUsed) {
-                log.error("vulkan/config-create","could not use requested optional extension '%s' for instance creation", name);
-                return {};
+            if(!requiredExtensionNameUseable) {
+                logError("could not use requested required extension '%s' for instance creation", name);
+                instanceRequestedExtensions.resize(0);
+                return;
             }
         }
 
-        // count the number of usable extensions
-        // optional extensions: log to info if we can't use them, but do not failover
+        // check if  we can use the user-specified optional extensions we can use for instance specification
+        // if we can't use them, just report it
         for(const char * name : optionalExtensionNames) {
             bool optionalExtensionNameUsable{ false };
             for(const VkExtensionProperties prop : instanceAvailableExtensions) {
                 if(std::strcmp(prop.extensionName,name) == 0) {
-                    ++numExtensionsToRequest;
+                    instanceRequestedExtensions.push_back(name);
                     optionalExtensionNameUsable = true;
                 }
             }
             if(!optionalExtensionNameUsable) {
-                // todo: better name for logging in this stage
-                log.info("vulkan/config-create","could not use requested optional extension '%s' for instance creation", name);
+                logInfo("could not use requested optional extension '%s' for instance creation", name);
             }
         }
-
-        // allocate space for the extensions to request at instance creation
-        instanceRequestedExtensions = allocator.allocate<char*>(numExtensionsToRequest);
-        instanceRequestedExtensionsData = allocator.allocate<char>(
-            numExtensionsToRequest * VK_MAX_EXTENSION_NAME_SIZE
-        );
-        std::size_t ptrIndex{ 0 };
-        std::size_t writeIndex{ 0 };
-        // write the required extensions
-        for(const char * name : requiredExtensionNames) {
-            instanceRequestedExtensions[ptrIndex] = instanceRequestedExtensionsData.data() + writeIndex;
-            std::strcpy(
-                instanceRequestedExtensions[ptrIndex],
-                name
-            );
-            ++ptrIndex;
-            writeIndex += VK_MAX_EXTENSION_NAME_SIZE;
-        }
-
-        // write the optional extensions we support
-        for(const char * name : optionalExtensionNames) {
-            // just loop back through the supported Extensions
-            for(const VkExtensionProperties prop : instanceAvailableExtensions) {
-                if(std::strcmp(prop.extensionName, name) == 0) {
-                    instanceRequestedExtensions[ptrIndex] = instanceRequestedExtensionsData.data() + writeIndex;
-                    std::strcpy(
-                        instanceRequestedExtensions[ptrIndex],
-                        name
-                    );
-                    ++ptrIndex;
-                    writeIndex += VK_MAX_EXTENSION_NAME_SIZE;
-                }
-            }
-        }
-
-        return instanceRequestedExtensions;
     }
 
-    [[nodiscard]] std::optional<const VkInstance> createInstance(
+    void createInstance(
         const char* applicationName,
         const char* engineName)
     {
@@ -681,11 +517,21 @@ private:
 
         // flags check
         core::u32 flags{ 0 };
-        for(const char * extensionName : instanceRequestedExtensions) {
-            if(strcmp(extensionName, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME) == 0) {
+        for(const std::string& extensionName : instanceRequestedExtensions) {
+            if(strcmp(extensionName.c_str(), VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME) == 0) {
                 flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
                 logInfo("extension VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME requested for new instance: portability bit set for instance creation flags");
             }
+        }
+
+        // intermediate buffers of const char *s
+        std::vector<const char*> instanceRequestedLayerPtrs{};
+        for(std::string& str : instanceRequestedLayers) {
+            instanceRequestedLayerPtrs.push_back(str.c_str());
+        }
+        std::vector<const char*> instanceRequestedExtensionPtrs{};
+        for(std::string& str : instanceRequestedExtensions) {
+            instanceRequestedExtensionPtrs.push_back(str.c_str());
         }
 
         const VkInstanceCreateInfo createInfo {
@@ -694,22 +540,13 @@ private:
             .flags = flags,
             .pApplicationInfo = &appInfo,
             .enabledLayerCount = static_cast<core::u32>(instanceRequestedLayers.size()),
-            .ppEnabledLayerNames = instanceRequestedLayers.data(),
+            .ppEnabledLayerNames = instanceRequestedLayerPtrs.data(),
             .enabledExtensionCount = static_cast<core::u32>(instanceRequestedExtensions.size()),
-            .ppEnabledExtensionNames = instanceRequestedExtensions.data()
+            .ppEnabledExtensionNames = instanceRequestedExtensionPtrs.data()
         };
 
         // Create Vulkan Instance
-        // todo: pass an allocator
         const VkAllocationCallbacks* pHostMemoryAllocator = nullptr; // use Vulkan's internal allocator
-        VkAllocationCallbacks allocationCallbacks {
-            nullptr,
-            nullptr,
-            nullptr,
-            nullptr,
-            &Configurator::allocationNotification,
-            &Configurator::freeNotification
-        };
         VkInstance vulkanInstance;
         VkResult res = vkCreateInstance(
             &createInfo,
@@ -719,12 +556,11 @@ private:
 
         if(res != VK_SUCCESS) {
             logError("could not create vulkan instance");
-            return std::nullopt;
+            return;
         }
 
         logInfo("created instance");
         instance = vulkanInstance;
-        return instance;
     }
 
 };

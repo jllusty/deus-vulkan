@@ -29,7 +29,7 @@ public:
 
     // todo: device queue creation parameters
     // todo: create more than one device
-    std::span<const VkDevice> createDevices(const VkPhysicalDevice physicalDevice, std::size_t count = 1) {
+    std::span<const VkDevice> createDevices(const PhysicalDeviceHandle physicalDeviceHandle, std::size_t count = 1) {
         float priority = 1.0f;
 
         // todo: query directly from the configurator
@@ -44,10 +44,10 @@ public:
 
         // todo: lldb prints like 256 addresses when I tell it "fr v" of the propNames
         // query configurator to see if portability was set
-        std::span<char* const> propNames = config.getEnabledExtensionNames();
+        std::span<const std::string> propNames = config.getEnabledExtensionNames();
         core::u32 numExtensions{ 0 };
-        for(const char* props : propNames) {
-            if(strcmp(props, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME) == 0) {
+        for(const std::string& props : propNames) {
+            if(strcmp(props.c_str(), VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME) == 0) {
                 ++numExtensions;
             }
         }
@@ -55,8 +55,8 @@ public:
         extensionNamesData = allocator.allocate<char>(numExtensions * VK_MAX_EXTENSION_NAME_SIZE);
         std::size_t ptrIndex{ 0 };
         std::size_t writeIndex{ 0 };
-        for(const char* props : propNames) {
-            if(strcmp(props, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME) == 0) {
+        for(const std::string& props : propNames) {
+            if(strcmp(props.c_str(), VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME) == 0) {
                 extensionNames[ptrIndex] = extensionNamesData.data() + writeIndex;
                 strcpy(
                     extensionNames[ptrIndex],
@@ -83,6 +83,12 @@ public:
 
         devices = allocator.allocate<VkDevice>(count);
 
+        std::optional<const VkPhysicalDevice> physicalDeviceOpt = config.getVulkanPhysicalDevice(physicalDeviceHandle);
+        if(!physicalDeviceOpt.has_value()) {
+            logError("no valid vulkan physical devices to create a logical device with");
+            return {};
+        }
+        const VkPhysicalDevice physicalDevice = *physicalDeviceOpt;
         VkResult result = vkCreateDevice(
             physicalDevice,
             &logicalDeviceCreateInfo,

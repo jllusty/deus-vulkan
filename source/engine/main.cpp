@@ -43,10 +43,7 @@ int main()
     float2 playerPosition{ 152.f, 300.f };
     Chunk playerChunk = worldPositionXZToChunk(playerPosition);
     chonker.request(playerChunk);
-    while(chonker.getStatus(playerChunk) != ChunkStatus::Loaded) {
-        std::cout << "waiting on the writer thread\n";
-    }
-    ChunkData* pChunkData = chonker.fetch(playerChunk);
+    // ChunkData* pChunkData = chonker.fetch(playerChunk);
 
     // Pool Allocator
     // Vulkan Configurator
@@ -64,12 +61,12 @@ int main()
     const gfx::vulkan::Configurator& config = *optConfig;
 
     // pick a physical device
-    std::optional<const VkPhysicalDevice> bestPhysicalDevice = config.getBestPhysicalDevice();
+    std::optional<const gfx::vulkan::PhysicalDeviceHandle> bestPhysicalDevice = config.getBestPhysicalDevice();
     if(!bestPhysicalDevice.has_value()) {
         log.error("main", "could not select a physical device");
         return -1;
     }
-    const VkPhysicalDevice physicalDevice = *bestPhysicalDevice;
+    const gfx::vulkan::PhysicalDeviceHandle physicalDevice = *bestPhysicalDevice;
 
     // create gpu context
     gfx::vulkan::GpuContext context {
