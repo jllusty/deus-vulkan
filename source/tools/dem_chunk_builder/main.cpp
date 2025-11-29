@@ -1,5 +1,10 @@
 // tools/dem_chunk_builders/main.cpp: main for the chunk preprocessor,
-//     turning NASA DEM (.hgt) files into chunk-ready heightmaps
+//     turning NASA DEM (.hgt) files into chunk-ready heightmaps (.chunk)
+//
+// Chunk Binary File Format (.chunk)
+// [HEADER] - uint64_t of number of chunks
+// [TOC RECORDS] - a ChunkTOC for each Chunk, see engine/world/chunk_data.hpp
+// [CHUNK] - Chunk Heightmap
 
 #include <iostream>
 #include <fstream>
@@ -8,8 +13,11 @@
 
 int main(int argc, char* argv[]) {
     using namespace engine::world;
+    // todo: program arguments for DEM parameters
     // 3-arcsecond DEM is 1201 x 1201 ints
-    const std::size_t fileBlockSize = 1201;
+    //const std::size_t fileBlockSize = 3601;
+    // 1-arcsecond DEM is 3601 x 3601 ints
+    const std::size_t fileBlockSize = 3601;
     constexpr std::size_t chunkSize = CHUNK_RESOLUTION;
 
     const char * inFilename = "assets/N40W106.hgt";
@@ -24,21 +32,24 @@ int main(int argc, char* argv[]) {
     }
 
     if(!fout.good()) {
-        std::cout << "cannot write chunked file: '" << outFilename << "'\n";
+        std::cout << "cannot write to chunked file: '" << outFilename << "'\n";
         return -1;
     }
 
+    // we write full-sized chunks even when there isn't enough data in a chunk
+    // at the file scope. we just use the last sampled height.
     const std::size_t numChunksWide = std::ceill(
         static_cast<float>(fileBlockSize) / static_cast<float>(chunkSize)
     );
 
-    std::cout << "I will read " << numChunksWide * numChunksWide << " total chunks\n";
-
+    // total number of chunks we will write into the .chunk file
     std::uint64_t numChunks = numChunksWide * numChunksWide;
-    // write number of chunks
+
+    // write header - number of chunks
     fout.write(reinterpret_cast<char*>(&numChunks), sizeof(numChunks));
 
-    // write full TOC first
+    // write TOCs first, update the chunk coordinates and offsets
+    // as we generate the chunks
     ChunkTOC chunkTOC{};
     for(std::size_t cy = 0; cy < numChunksWide; ++cy) {
         for(std::size_t cx = 0; cx < numChunksWide; ++cx) {
@@ -81,6 +92,7 @@ int main(int argc, char* argv[]) {
                     // todo: could be doing bulk reads per chunk
                     fin.seekg(2*offset, std::ios::beg);
 
+                    // read big-endian signed 16-bit integers
                     unsigned char buffer[2]{};
                     fin.read(reinterpret_cast<char*>(buffer), 2);
                     uint16_t hiByte = static_cast<uint16_t>(buffer[0]);
@@ -102,9 +114,10 @@ int main(int argc, char* argv[]) {
             chunkTOC.chunkZ = cy;
             chunkTOC.offset = chunkOffset;
             fout.write(reinterpret_cast<char*>(&chunkTOC), sizeof(chunkTOC));
+
             // seek back to where we were going to write the chunk
             fout.seekp(chunkOffset, std::ios::beg);
-            // write chunked mesh to file as raw int16_t
+            // write chunked heights to file as raw int16_t
             fout.write(
                 reinterpret_cast<const char*>(chunk.data()),
                 chunk.size() * sizeof(int16_t)
