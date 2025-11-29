@@ -40,7 +40,7 @@ int main()
     using namespace engine::world;
     constexpr const std::size_t capacity = 64;
     Chonker chonker(capacity);
-    float2 playerPosition{ 152.f, -300.f };
+    float2 playerPosition{ 152.f, 300.f };
     Chunk playerChunk = worldPositionXZToChunk(playerPosition);
     chonker.request(playerChunk);
     while(chonker.getStatus(playerChunk) != ChunkStatus::Loaded) {

@@ -6,5 +6,5 @@ The 1-arccsecond DEMs are available from NASA's public data archive. Here's the 
 ```bash
 cd assets
 wget https://step.esa.int/auxdata/dem/SRTMGL1/N40W106.SRTMGL1.hgt.zip
-unzip N40W106.SRTMGL1.hgt
+unzip N40W106.SRTMGL1.hgt.zip
 ```

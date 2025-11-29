@@ -4,12 +4,13 @@
 #include <iostream>
 #include <fstream>
 
-#include "engine/world/chunk.hpp"
+#include "engine/world/chunk_data.hpp"
 
 int main(int argc, char* argv[]) {
+    using namespace engine::world;
     // 3-arcsecond DEM is 1201 x 1201 ints
     const std::size_t fileBlockSize = 1201;
-    constexpr std::size_t chunkSize = engine::world::CHUNK_RESOLUTION;
+    constexpr std::size_t chunkSize = CHUNK_RESOLUTION;
 
     const char * inFilename = "assets/N40W106.hgt";
     std::ifstream fin(inFilename, std::ios_base::binary);
@@ -31,16 +32,30 @@ int main(int argc, char* argv[]) {
         static_cast<float>(fileBlockSize) / static_cast<float>(chunkSize)
     );
 
-    std::cout << "I will read " << numChunksWide << " in both directions\n";
+    std::cout << "I will read " << numChunksWide * numChunksWide << " total chunks\n";
+
+    std::uint64_t numChunks = numChunksWide * numChunksWide;
+    // write number of chunks
+    fout.write(reinterpret_cast<char*>(&numChunks), sizeof(numChunks));
+
+    // write full TOC first
+    ChunkTOC chunkTOC{};
+    for(std::size_t cy = 0; cy < numChunksWide; ++cy) {
+        for(std::size_t cx = 0; cx < numChunksWide; ++cx) {
+            fout.write(reinterpret_cast<char*>(&chunkTOC), sizeof(chunkTOC));
+        }
+    }
 
     // file offset: start at first cell
     std::size_t offset = 0;
     fin.seekg(offset);
 
+    // chunk TOC offset
+    std::size_t offsetTOC = sizeof(numChunks);
     // fill and write each chunk's heightmap data (cx,cy)
     uint16_t lastHeight = 0;
-    for(std::size_t cy = 0; cy < chunkSize; ++cy) {
-        for(std::size_t cx = 0; cx < chunkSize; ++cx) {
+    for(std::size_t cy = 0; cy < numChunksWide; ++cy) {
+        for(std::size_t cx = 0; cx < numChunksWide; ++cx) {
 
             // read chunk from file
             // chunk local coords
@@ -80,14 +95,23 @@ int main(int argc, char* argv[]) {
                 }
             }
 
-            // scream
-            std::cout << "I read a chunk of genuine tax-payer-funded space program data\n";
-
+            // go back and update the chunkTOC with this offset
+            std::uint64_t chunkOffset = fout.tellp();
+            fout.seekp(offsetTOC, std::ios::beg);
+            chunkTOC.chunkX = cx;
+            chunkTOC.chunkZ = cy;
+            chunkTOC.offset = chunkOffset;
+            fout.write(reinterpret_cast<char*>(&chunkTOC), sizeof(chunkTOC));
+            // seek back to where we were going to write the chunk
+            fout.seekp(chunkOffset, std::ios::beg);
             // write chunked mesh to file as raw int16_t
             fout.write(
                 reinterpret_cast<const char*>(chunk.data()),
                 chunk.size() * sizeof(int16_t)
             );
+
+            // update TOC offset
+            offsetTOC += sizeof(ChunkTOC);
         }
     }
 }

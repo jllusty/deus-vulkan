@@ -15,8 +15,16 @@ enum class ChunkStatus : core::u32 {
 struct ChunkData {
     // chunk coordinate
     Chunk chunk{};
-    // height map (should be u16, but using i32 for testing)
-    std::array<core::i32, CHUNK_RESOLUTION * CHUNK_RESOLUTION> heights{};
+    // height map
+    std::array<core::i16, CHUNK_RESOLUTION * CHUNK_RESOLUTION> heights{};
+};
+
+struct ChunkTOC {
+    // chunk coordinate
+    core::i32 chunkX{};
+    core::i32 chunkZ{};
+    // file offset
+    core::u64 offset{};
 };
 
 inline float sampleChunkDataHeights(ChunkData& chunkData, int2 sampleCoords) {
