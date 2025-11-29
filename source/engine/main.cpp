@@ -75,8 +75,12 @@ int main()
         config
     };
 
-    std::span<const VkDevice> devices = context.createDevices(physicalDevice);
-    const VkBuffer* buffer = context.createBuffer(1024 * 1024);
+    std::optional<const gfx::vulkan::LogicalDeviceHandle> deviceOpt = context.createDevice(physicalDevice);
+    if(!deviceOpt.has_value()) {
+        log.error("main", "could not create a logical device");
+    }
+    gfx::vulkan::LogicalDeviceHandle device = *deviceOpt;
+    std::optional<const gfx::vulkan::BufferHandle> bufferOpt = context.createBuffer(device, 1024 * 1024);
 
     // destruction order: buffers -> devices -> instance
     context.destroyBuffers();

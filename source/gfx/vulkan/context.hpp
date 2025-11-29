@@ -1,35 +1,40 @@
 // context.hpp: gpu runtime context: manage devices, buffers, images, queues
 #pragma once
 
-#include "core/memory/stack_allocator.hpp"
 #include "core/log/logging.hpp"
 #include "gfx/vulkan/config.hpp"
 #include <vulkan/vulkan_core.h>
 
 namespace gfx::vulkan {
 
-class GpuContext {
-    core::memory::StackAllocator allocator;
+struct LogicalDeviceHandle {
+    std::size_t id{ 0 };
+};
 
+struct BufferHandle {
+    std::size_t id{ 0 };
+};
+
+class GpuContext {
     const Configurator& config;
     core::log::Logger& log;
 
-    std::span<VkDevice> devices{};
-    std::span<VkBuffer> buffers{};
+    // logical device handles - index into devices
+    std::vector<LogicalDeviceHandle> deviceHandles{};
+    std::vector<VkDevice> devices{};
+    // buffer handles - index into buffers
+    std::vector<BufferHandle> bufferHandles{};
+    std::vector<VkBuffer> buffers{};
 
-    // todo: better way to store the names of extensions we enable (same as configurator)
-    // these should be querable for each device
-    std::span<char*> extensionNames{};
-    std::span<char> extensionNamesData{};
+    std::vector<std::string> extensionNames{};
 
 public:
     GpuContext(core::memory::Region region, core::log::Logger& log, const Configurator& config)
-        : allocator(region), log(log), config(config)
+        : log(log), config(config)
     {}
 
     // todo: device queue creation parameters
-    // todo: create more than one device
-    std::span<const VkDevice> createDevices(const PhysicalDeviceHandle physicalDeviceHandle, std::size_t count = 1) {
+    std::optional<const LogicalDeviceHandle> createDevice(const PhysicalDeviceHandle physicalDeviceHandle) {
         float priority = 1.0f;
 
         // todo: query directly from the configurator
@@ -42,28 +47,19 @@ public:
             .pQueuePriorities = &priority
         };
 
-        // todo: lldb prints like 256 addresses when I tell it "fr v" of the propNames
         // query configurator to see if portability was set
         std::span<const std::string> propNames = config.getEnabledExtensionNames();
-        core::u32 numExtensions{ 0 };
         for(const std::string& props : propNames) {
             if(strcmp(props.c_str(), VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME) == 0) {
-                ++numExtensions;
+                logInfo("config instance has VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME enabled, adding VK_KHR_portability_subset to device extension create info");
+                extensionNames.push_back("VK_KHR_portability_subset");
             }
         }
-        extensionNames = allocator.allocate<char*>(numExtensions);
-        extensionNamesData = allocator.allocate<char>(numExtensions * VK_MAX_EXTENSION_NAME_SIZE);
-        std::size_t ptrIndex{ 0 };
-        std::size_t writeIndex{ 0 };
-        for(const std::string& props : propNames) {
-            if(strcmp(props.c_str(), VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME) == 0) {
-                extensionNames[ptrIndex] = extensionNamesData.data() + writeIndex;
-                strcpy(
-                    extensionNames[ptrIndex],
-                    "VK_KHR_portability_subset" // todo: add to constants?
-                );
-                logInfo("config instance has VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME enabled, adding VK_KHR_portability_subset to device extension create info");
-            }
+
+        // create buffer for extension name pointers
+        std::vector<const char*> extensionNamePtrs{};
+        for(std::string& name : extensionNames) {
+            extensionNamePtrs.push_back(name.c_str());
         }
 
         // todo: require features
@@ -76,33 +72,35 @@ public:
             .pQueueCreateInfos = &deviceQueueCreateInfo,
             .enabledLayerCount = 0,
             .ppEnabledLayerNames = nullptr,
-            .enabledExtensionCount = static_cast<core::u32>(extensionNames.size()),
-            .ppEnabledExtensionNames = extensionNames.data(),
+            .enabledExtensionCount = static_cast<core::u32>(extensionNamePtrs.size()),
+            .ppEnabledExtensionNames = extensionNamePtrs.data(),
             .pEnabledFeatures = nullptr
         };
 
-        devices = allocator.allocate<VkDevice>(count);
+        VkDevice device{};
 
         std::optional<const VkPhysicalDevice> physicalDeviceOpt = config.getVulkanPhysicalDevice(physicalDeviceHandle);
         if(!physicalDeviceOpt.has_value()) {
             logError("no valid vulkan physical devices to create a logical device with");
-            return {};
+            return std::nullopt;
         }
         const VkPhysicalDevice physicalDevice = *physicalDeviceOpt;
         VkResult result = vkCreateDevice(
             physicalDevice,
             &logicalDeviceCreateInfo,
             nullptr,
-            devices.data()
+            &device
         );
 
         if(result != VK_SUCCESS) {
             logError("failed to create a logical device");
-            return {};
+            return std::nullopt;
         }
 
-        logInfo("created a logical device");
-        return devices;
+        deviceHandles.push_back({.id = devices.size()});
+        devices.push_back(device);
+        logInfo("created a logical device (%lu)", deviceHandles.back().id);
+        return deviceHandles.back();
     }
 
     bool destroyDevices() noexcept {
@@ -139,7 +137,7 @@ public:
         logInfo("destroyed all buffers");
     }
 
-    const VkBuffer* createBuffer(core::u32 sizeBytes) noexcept {
+    std::optional<const BufferHandle> createBuffer(LogicalDeviceHandle deviceHandle, core::u32 sizeBytes) noexcept {
         const VkBufferCreateInfo bufferCreateInfo {
             .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
             .pNext = nullptr,
@@ -151,19 +149,26 @@ public:
             .pQueueFamilyIndices = nullptr
         };
 
-        buffers = allocator.allocate<VkBuffer>(1);
+        const VkDevice device = devices.at(deviceHandle.id);
+
+        VkBuffer buffer{};
         VkResult result = vkCreateBuffer(
-            devices.front(),
+            device,
             &bufferCreateInfo,
             nullptr,
-            buffers.data()
+            &buffer
         );
 
         if(result != VK_SUCCESS) {
             log.error("main", "buffer creation failed\n");
         }
 
-        return buffers.data();
+        bufferHandles.push_back({.id = buffers.size()});
+        buffers.push_back(buffer);
+
+        logInfo("created a new buffer (%lu) on logical device (%lu)", bufferHandles.back().id, deviceHandle.id);
+
+        return bufferHandles.back();
     }
 
 private:
