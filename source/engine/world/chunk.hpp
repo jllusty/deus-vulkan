@@ -7,16 +7,17 @@
 namespace engine::world {
 
 // size of chunks in world space
-constexpr const core::i32 CHUNK_SIZE = 16;
+constexpr const core::i32 CHUNK_SIZE = 32;
 
 // sample resolution of chunks
-constexpr const core::i32 CHUNK_RESOLUTION = 17;
+constexpr const core::i32 CHUNK_RESOLUTION = 33;
 
 // chunk coordinate
 struct Chunk {
     core::i32 x{ 0 };
     core::i32 z{ 0 };
 
+    // todo: Will mentions, this could just be a spaceship bro?
     bool operator==(const Chunk& other) const noexcept {
         return (x == other.x) and (z == other.z);
     }

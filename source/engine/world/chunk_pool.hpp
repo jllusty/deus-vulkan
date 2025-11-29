@@ -66,10 +66,8 @@ public:
         loadedIndex[poolIndex] = loaded.size();
         loaded.push_back(poolIndex);
 
-        ChunkData& chunkData = pool[poolIndex];
-        chunkData.chunk = chunk;
-        chunkData.status = ChunkStatus::Loading;
-        // chunkData.heights = ...
+        // update status to loading
+        status[poolIndex].store(ChunkStatus::Loading, std::memory_order_release);
         return;
     }
 
@@ -95,6 +93,9 @@ public:
 
         // add the unloaded chunk pool index into the loadable pool indices
         loadable.push_back(poolIndex);
+
+        // update status to unloaded
+        status[poolIndex].store(ChunkStatus::Unloaded, std::memory_order_release);
     }
 
     std::span<const std::size_t> getRequestedChunkIds() const noexcept {

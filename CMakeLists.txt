@@ -14,11 +14,19 @@ find_package(Vulkan REQUIRED)
 find_package(SFML 3.0 REQUIRED COMPONENTS Window)
 
 add_executable(VulkanApp
-    source/main.cpp
+    source/engine/main.cpp
+)
+
+add_executable(ChunkBuilder
+    source/tools/dem_chunk_builder/main.cpp
 )
 
 # set root for includes at source/
 target_include_directories(VulkanApp PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/source"
+)
+
+target_include_directories(ChunkBuilder PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/source"
 )
 

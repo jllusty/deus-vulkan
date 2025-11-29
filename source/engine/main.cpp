@@ -1,8 +1,4 @@
-// main.cpp
-
-#include <span>
-#include <chrono>
-#include <thread>
+// engine/main.cpp: runtime main for deus-vulkan
 
 #include <sys/wait.h>
 #include <vulkan/vulkan.h>
