@@ -29,7 +29,7 @@ class GpuContext {
     std::vector<std::string> extensionNames{};
 
 public:
-    GpuContext(core::memory::Region region, core::log::Logger& log, const Configurator& config)
+    GpuContext(core::log::Logger& log, const Configurator& config)
         : log(log), config(config)
     {}
 

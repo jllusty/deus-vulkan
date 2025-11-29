@@ -4,8 +4,6 @@
 #include <iostream>
 #include <array>
 
-#include "core/memory/types.hpp"
-
 #include "core/time/time.hpp"
 
 namespace core::log {
@@ -43,16 +41,10 @@ class Logger {
     // we use the core region memory type so that we can use it
     // as our writing buffer, an allocator is not needed to
     // manage this
-    std::span<char> buffer{};
+    std::array<char,LogMessageSize> buffer{};
 
 public:
-    Logger(memory::Region region)
-    {
-        buffer = std::span<char>(
-            reinterpret_cast<char*>(region.data()),
-            region.size()
-        );
-    }
+    Logger() {}
 
     template<typename... Args>
     void debug(const char * subsystem, const char * messageFormatString, Args&&... args) {

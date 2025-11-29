@@ -10,8 +10,6 @@
 
 #include "engine/world/chonker.hpp"
 
-#include "core/memory/base_allocator.hpp"
-#include "core/memory/types.hpp"
 #include "core/log/logging.hpp"
 
 #include "gfx/vulkan/constants.hpp"
@@ -20,18 +18,8 @@
 
 int main()
 {
-    // ArenaAllocator Use: Subsystem-level Memory Management
-    // top level: reserve 4 MB from the OS
-    core::memory::BaseAllocator baseAllocator(4 * 1024 * 1024);
-
-    // subsystem call: create a memory region with the right size from the shared base allocator
-    core::memory::Region regionLog = baseAllocator.reserve(1024 * 1024);
-    core::memory::Region regionChonker = baseAllocator.reserve(1024 * 1024);
-    core::memory::Region regionVulkanConfig = baseAllocator.reserve(1024 * 1024);
-    core::memory::Region regionVulkanContext = baseAllocator.reserve(1024 * 1024);
-
     // Logging
-    core::log::Logger log(regionLog);
+    core::log::Logger log{};
 
     // Mesh Generator
     gfx::geometry::GridMesh gridMesh = gfx::geometry::MeshGenerator::createGridMesh(engine::world::CHUNK_RESOLUTION);
@@ -53,7 +41,7 @@ int main()
         .optionalLayerNames = { "VK_LAYER_KHRONOS_shader_object", "VK_LAYER_LUNARG_api_dump" },
         .optionalExtensionNames = {},
     };
-    std::optional<gfx::vulkan::Configurator> optConfig = gfx::vulkan::Configurator::create(regionVulkanConfig, instanceRequest, log);
+    std::optional<gfx::vulkan::Configurator> optConfig = gfx::vulkan::Configurator::create(instanceRequest, log);
     if(!optConfig.has_value()) {
         log.error("main","could not configurate vulkan");
         return -1;
@@ -70,7 +58,6 @@ int main()
 
     // create gpu context
     gfx::vulkan::GpuContext context {
-        regionVulkanContext,
         log,
         config
     };

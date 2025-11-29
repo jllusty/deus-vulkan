@@ -59,8 +59,7 @@ class Configurator {
     core::log::Logger& log;
 
 public:
-    static std::optional<Configurator> create(core::memory::Region region,
-        InstanceRequest request,
+    static std::optional<Configurator> create(InstanceRequest request,
         core::log::Logger& log) noexcept
     {
         // call private constructor
