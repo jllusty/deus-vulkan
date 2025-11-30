@@ -3,38 +3,113 @@
 
 #include "core/log/logging.hpp"
 #include "gfx/vulkan/config.hpp"
+
 #include <vulkan/vulkan_core.h>
 
-namespace gfx::vulkan {
+#include <vk_mem_alloc.h>
 
-struct LogicalDeviceHandle {
-    std::size_t id{ 0 };
-};
+namespace gfx::vulkan {
 
 struct BufferHandle {
     std::size_t id{ 0 };
 };
 
 class GpuContext {
+    struct VertexBuffer {
+        VkBuffer buffer{};
+        VmaAllocation allocation{};
+        std::uint64_t count{ 0 };
+    };
+
     const Configurator& config;
     core::log::Logger& log;
 
+    VmaAllocator allocator{};
+
     // logical device handles - index into devices
-    std::vector<LogicalDeviceHandle> deviceHandles{};
+    // std::vector<LogicalDeviceHandle> deviceHandles{};
+    // todo: still expose those, but each needs integration with a specific
+    //       vma allocator
     std::vector<VkDevice> devices{};
     // buffer handles - index into buffers
     std::vector<BufferHandle> bufferHandles{};
-    std::vector<VkBuffer> buffers{};
+    std::vector<VertexBuffer> buffers{};
 
     std::vector<std::string> extensionNames{};
 
 public:
-    GpuContext(core::log::Logger& log, const Configurator& config)
+    GpuContext(PhysicalDeviceHandle physicalDeviceHandle, core::log::Logger& log, const Configurator& config)
         : log(log), config(config)
-    {}
+    {
+        // create a logical device for use with the vma allocator
+        VmaAllocatorCreateInfo info{};
+        info.instance       = *config.getVulkanInstance();
+        info.physicalDevice = *config.getVulkanPhysicalDevice(physicalDeviceHandle);
+        info.device         = *createDevice(physicalDeviceHandle);
+        // note: from what I can tell, MoltenVK breaks a call to vkGetBufferMemoryRequirements2KHR
+        // so we have to force it not to use that procedure. We set vma_impl.cpp with
+        // VMA_DEDICATED_ALLOCATION = 0 to avoid the path during buffer allocation
+        info.vulkanApiVersion = VK_API_VERSION_1_0; // VK_VERSION_1_0; //*config.getVulkanAPI();
+
+        VkResult res = vmaCreateAllocator(&info, &allocator);
+        if (res != VK_SUCCESS) {
+            logError("vmaCreateAllocator failed");
+        }
+    }
+
+    ~GpuContext() {
+        // destroy buffers
+        destroyBuffers();
+
+        // destroy vma allocator
+        vmaDestroyAllocator(allocator);
+
+        // destroy devices
+        destroyDevices();
+    }
 
     // todo: device queue creation parameters
-    std::optional<const LogicalDeviceHandle> createDevice(const PhysicalDeviceHandle physicalDeviceHandle) {
+    std::optional<const BufferHandle> createBuffer(core::u32 sizeBytes) noexcept {
+        const VkBufferCreateInfo bufferCreateInfo {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .size = sizeBytes,
+            .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+            .queueFamilyIndexCount = 0,
+            .pQueueFamilyIndices = nullptr
+        };
+
+        VmaAllocationCreateInfo allocInfo {};
+        allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+
+        VkBuffer buffer;
+        VmaAllocation allocation;
+        VkResult result = vmaCreateBuffer(allocator, &bufferCreateInfo, &allocInfo, &buffer, &allocation, nullptr);
+
+        if(result != VK_SUCCESS) {
+            logError("buffer creation failed\n");
+            return std::nullopt;
+        }
+
+        VertexBuffer vertexBuffer {
+            .buffer = buffer,
+            .allocation = allocation,
+            .count = sizeBytes
+        };
+
+        bufferHandles.push_back({.id = buffers.size()});
+        buffers.push_back(vertexBuffer);
+
+        logInfo("created a new buffer (%lu)", bufferHandles.back().id);
+
+        return bufferHandles.back();
+    }
+
+private:
+    // used once at instantiation
+    std::optional<const VkDevice> createDevice(const PhysicalDeviceHandle physicalDeviceHandle) {
         float priority = 1.0f;
 
         // todo: query directly from the configurator
@@ -55,6 +130,11 @@ public:
                 extensionNames.push_back("VK_KHR_portability_subset");
             }
         }
+
+        // needed for vulkan memory allocator
+        extensionNames.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+        extensionNames.push_back(VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME);
+        extensionNames.push_back(VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME);
 
         // create buffer for extension name pointers
         std::vector<const char*> extensionNamePtrs{};
@@ -97,10 +177,9 @@ public:
             return std::nullopt;
         }
 
-        deviceHandles.push_back({.id = devices.size()});
         devices.push_back(device);
-        logInfo("created a logical device (%lu)", deviceHandles.back().id);
-        return deviceHandles.back();
+        logInfo("created a logical device");
+        return devices.back();
     }
 
     bool destroyDevices() noexcept {
@@ -126,52 +205,15 @@ public:
 
     void destroyBuffers() noexcept {
         for(std::size_t i = 0; i < buffers.size(); ++i) {
-            vkDestroyBuffer(
-                devices[i],
-                buffers[i],
-                nullptr
-            );
+            vmaDestroyBuffer(allocator, buffers[i].buffer, buffers[i].allocation);
         }
 
         buffers = {};
         logInfo("destroyed all buffers");
     }
 
-    std::optional<const BufferHandle> createBuffer(LogicalDeviceHandle deviceHandle, core::u32 sizeBytes) noexcept {
-        const VkBufferCreateInfo bufferCreateInfo {
-            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-            .pNext = nullptr,
-            .flags = 0,
-            .size = sizeBytes,
-            .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-            .queueFamilyIndexCount = 0,
-            .pQueueFamilyIndices = nullptr
-        };
 
-        const VkDevice device = devices.at(deviceHandle.id);
 
-        VkBuffer buffer{};
-        VkResult result = vkCreateBuffer(
-            device,
-            &bufferCreateInfo,
-            nullptr,
-            &buffer
-        );
-
-        if(result != VK_SUCCESS) {
-            log.error("main", "buffer creation failed\n");
-        }
-
-        bufferHandles.push_back({.id = buffers.size()});
-        buffers.push_back(buffer);
-
-        logInfo("created a new buffer (%lu) on logical device (%lu)", bufferHandles.back().id, deviceHandle.id);
-
-        return bufferHandles.back();
-    }
-
-private:
     // log convenience
     template<typename... Args>
     void logError(const char* msg, Args... args) {

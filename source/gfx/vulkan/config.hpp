@@ -149,6 +149,14 @@ public:
         logInfo("destroyed instance");
     }
 
+    constexpr std::optional<const core::u32> getVulkanAPI() const noexcept {
+        return apiVersion;
+    }
+
+    constexpr std::optional<const VkInstance> getVulkanInstance() const noexcept {
+        return instance;
+    }
+
     constexpr std::optional<const VkPhysicalDevice> getVulkanPhysicalDevice(const PhysicalDeviceHandle physicalDevice) const noexcept {
         return physicalDevices.at(physicalDevice.id);
     }
@@ -362,6 +370,7 @@ private:
                 VK_VERSION_MINOR(version)
             );
             apiVersion = version;
+            return;
         }
 
         logInfo("vkEnumerateInstanceVersion does not exist, using vulkan 1.0");
@@ -369,7 +378,7 @@ private:
         // we must assume that if we did not get a valid function pointer from vulkan on
         // the first command call, it is because that function is not defined and we
         // are working with vulkan 1.0
-        apiVersion = VK_VERSION_1_0;
+        apiVersion = VK_API_VERSION_1_0;
     }
 
     void enumerateAvailableInstanceLayerProperties() noexcept {
