@@ -24,11 +24,13 @@ add_executable(ChunkBuilder
 )
 
 # box vulkan memory allocator into a library
-add_library(VMAImpl STATIC source/gfx/vulkan/vma_impl.cpp)
+add_library(VMAImpl
+    STATIC source/thirdparty_impl/VulkanMemoryAllocator/vma_impl.cpp
+)
 
 # set root for includes at source/
-target_include_directories(VulkanApp PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/source"
+target_include_directories(VulkanApp
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/source"
 )
 
 target_include_directories(VMAImpl
@@ -39,13 +41,14 @@ target_include_directories(ChunkBuilder PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/source"
 )
 
-target_link_libraries(VMAImpl PUBLIC Vulkan::Vulkan)
-target_link_libraries(VMAImpl PRIVATE GPUOpen::VulkanMemoryAllocator)
+target_link_libraries(VMAImpl
+    PUBLIC Vulkan::Vulkan
+    PRIVATE GPUOpen::VulkanMemoryAllocator
+)
 
-target_link_libraries(VulkanApp PRIVATE Vulkan::Vulkan)
-target_link_libraries(VulkanApp PRIVATE GPUOpen::VulkanMemoryAllocator)
-target_link_libraries(VulkanApp PRIVATE VMAImpl)
-target_link_libraries(VulkanApp PRIVATE SFML::Window)
+target_link_libraries(VulkanApp
+    PRIVATE Vulkan::Vulkan GPUOpen::VulkanMemoryAllocator VMAImpl SFML::Window
+)
 
 # silence hundreds of warnings from vulkan memory allocator
 target_compile_options(VMAImpl PRIVATE -Wno-everything)
