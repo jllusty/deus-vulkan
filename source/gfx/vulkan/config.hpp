@@ -62,7 +62,6 @@ public:
     static std::optional<Configurator> create(InstanceRequest request,
         core::log::Logger& log) noexcept
     {
-        // call private constructor
         Configurator config(log);
 
         // instance-level vulkan api

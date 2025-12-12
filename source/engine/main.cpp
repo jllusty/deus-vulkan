@@ -63,8 +63,13 @@ int main()
         config
     };
 
-    std::optional<const gfx::vulkan::BufferHandle> bufferOpt = context.createBuffer(1024 * 1024);
-    std::optional<const gfx::vulkan::BufferHandle> bufferOpt2 = context.createBuffer(1024 * 1024);
+    while(chonker.getStatus(playerChunk) != ChunkStatus::Loaded) {
+        log.info("main","waiting before loading heightmap into GPU...");
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+
+    // copy read heads into a device-local vertex buffer
+    context.CmdBuffers(chonker.fetch(playerChunk)->heights);
 
     // instance destroyed on config dropping out of scope
 

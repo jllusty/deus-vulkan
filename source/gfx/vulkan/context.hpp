@@ -3,6 +3,7 @@
 
 #include "core/log/logging.hpp"
 #include "gfx/vulkan/config.hpp"
+#include "gfx/vulkan/resources.hpp"
 
 #include <vulkan/vulkan_core.h>
 
@@ -10,106 +11,18 @@
 
 namespace gfx::vulkan {
 
-struct BufferHandle {
-    std::size_t id{ 0 };
-};
+// Owner for VkDevice
+class Device {
+    std::vector<std::string> extensionNames{};
+    VkDevice device{};
 
-class GpuContext {
-    struct VertexBuffer {
-        VkBuffer buffer{};
-        VmaAllocation allocation{};
-        std::uint64_t count{ 0 };
-    };
-
-    const Configurator& config;
     core::log::Logger& log;
 
-    VmaAllocator allocator{};
-
-    // logical device handles - index into devices
-    // std::vector<LogicalDeviceHandle> deviceHandles{};
-    // todo: still expose those, but each needs integration with a specific
-    //       vma allocator
-    std::vector<VkDevice> devices{};
-    // buffer handles - index into buffers
-    std::vector<BufferHandle> bufferHandles{};
-    std::vector<VertexBuffer> buffers{};
-
-    std::vector<std::string> extensionNames{};
-
 public:
-    GpuContext(PhysicalDeviceHandle physicalDeviceHandle, core::log::Logger& log, const Configurator& config)
-        : log(log), config(config)
+    Device() = delete;
+    Device(core::log::Logger& log, const Configurator& config, const PhysicalDeviceHandle& physicalDeviceHandle)
+        : log(log)
     {
-        // create a logical device for use with the vma allocator
-        VmaAllocatorCreateInfo info{};
-        info.instance       = *config.getVulkanInstance();
-        info.physicalDevice = *config.getVulkanPhysicalDevice(physicalDeviceHandle);
-        info.device         = *createDevice(physicalDeviceHandle);
-        // note: from what I can tell, MoltenVK breaks a call to vkGetBufferMemoryRequirements2KHR
-        // so we have to force it not to use that procedure. We set vma_impl.cpp with
-        // VMA_DEDICATED_ALLOCATION = 0 to avoid the path during buffer allocation
-        info.vulkanApiVersion = VK_API_VERSION_1_0; // VK_VERSION_1_0; //*config.getVulkanAPI();
-
-        VkResult res = vmaCreateAllocator(&info, &allocator);
-        if (res != VK_SUCCESS) {
-            logError("vmaCreateAllocator failed");
-        }
-    }
-
-    ~GpuContext() {
-        // destroy buffers
-        destroyBuffers();
-
-        // destroy vma allocator
-        vmaDestroyAllocator(allocator);
-
-        // destroy devices
-        destroyDevices();
-    }
-
-    // todo: device queue creation parameters
-    std::optional<const BufferHandle> createBuffer(core::u32 sizeBytes) noexcept {
-        const VkBufferCreateInfo bufferCreateInfo {
-            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-            .pNext = nullptr,
-            .flags = 0,
-            .size = sizeBytes,
-            .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-            .queueFamilyIndexCount = 0,
-            .pQueueFamilyIndices = nullptr
-        };
-
-        VmaAllocationCreateInfo allocInfo {};
-        allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-
-        VkBuffer buffer;
-        VmaAllocation allocation;
-        VkResult result = vmaCreateBuffer(allocator, &bufferCreateInfo, &allocInfo, &buffer, &allocation, nullptr);
-
-        if(result != VK_SUCCESS) {
-            logError("buffer creation failed\n");
-            return std::nullopt;
-        }
-
-        VertexBuffer vertexBuffer {
-            .buffer = buffer,
-            .allocation = allocation,
-            .count = sizeBytes
-        };
-
-        bufferHandles.push_back({.id = buffers.size()});
-        buffers.push_back(vertexBuffer);
-
-        logInfo("created a new buffer (%lu)", bufferHandles.back().id);
-
-        return bufferHandles.back();
-    }
-
-private:
-    // used once at instantiation
-    std::optional<const VkDevice> createDevice(const PhysicalDeviceHandle physicalDeviceHandle) {
         float priority = 1.0f;
 
         // todo: query directly from the configurator
@@ -126,15 +39,11 @@ private:
         std::span<const std::string> propNames = config.getEnabledExtensionNames();
         for(const std::string& props : propNames) {
             if(strcmp(props.c_str(), VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME) == 0) {
-                logInfo("config instance has VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME enabled, adding VK_KHR_portability_subset to device extension create info");
+                log.info("gfx/vulkan/Device", "config instance has VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME enabled, adding VK_KHR_portability_subset to device extension create info");
+                // todo: magic constant
                 extensionNames.push_back("VK_KHR_portability_subset");
             }
         }
-
-        // needed for vulkan memory allocator
-        extensionNames.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
-        extensionNames.push_back(VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME);
-        extensionNames.push_back(VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME);
 
         // create buffer for extension name pointers
         std::vector<const char*> extensionNamePtrs{};
@@ -157,12 +66,11 @@ private:
             .pEnabledFeatures = nullptr
         };
 
-        VkDevice device{};
-
         std::optional<const VkPhysicalDevice> physicalDeviceOpt = config.getVulkanPhysicalDevice(physicalDeviceHandle);
         if(!physicalDeviceOpt.has_value()) {
-            logError("no valid vulkan physical devices to create a logical device with");
-            return std::nullopt;
+            log.error("gfx/vulkan/device","no valid vulkan physical devices to create a logical device with");
+            device = VK_NULL_HANDLE;
+            return;
         }
         const VkPhysicalDevice physicalDevice = *physicalDeviceOpt;
         VkResult result = vkCreateDevice(
@@ -173,47 +81,250 @@ private:
         );
 
         if(result != VK_SUCCESS) {
-            logError("failed to create a logical device");
-            return std::nullopt;
+            log.error("gfx/vulkan/device","failed to create a logical device");
+            device = VK_NULL_HANDLE;
+            return;
         }
 
-        devices.push_back(device);
-        logInfo("created a logical device");
-        return devices.back();
+        log.info("gfx/vulkan/device","created a logical device");
     }
 
-    bool destroyDevices() noexcept {
-        for(std::size_t i = 0; i < devices.size(); ++i) {
-            // wait until the device is idle
-            VkResult result = vkDeviceWaitIdle(devices[i]);
+    ~Device() {
+        // wait until the device is idle
+        VkResult result = vkDeviceWaitIdle(device);
 
-            if(result != VK_SUCCESS) {
-                logError("could not wait until logical device was idle for deletion");
-                return false;
-            }
-
-            vkDestroyDevice(
-                devices[i],
-                nullptr
-            );
+        if(result != VK_SUCCESS) {
+            log.error("gfx/vulkan/device","could not wait until logical device was idle for deletion");
+            // todo: defer to validation cleanup? is this recoverable?
+            return;
         }
 
-        devices = {};
-        logInfo("destroyed all logical devices");
-        return true;
+        vkDestroyDevice(
+            device,
+            nullptr
+        );
+        log.error("gfx/vulkan/device","destroyed logical device");
     }
 
-    void destroyBuffers() noexcept {
-        for(std::size_t i = 0; i < buffers.size(); ++i) {
-            vmaDestroyBuffer(allocator, buffers[i].buffer, buffers[i].allocation);
+    const VkDevice& get() const noexcept {
+        return device;
+    }
+};
+
+// RAII Owner for VmaAllocator
+class Allocator {
+    VmaAllocatorCreateInfo info{};
+    VmaAllocator allocator{};
+
+    core::log::Logger& log;
+
+public:
+    // no default c'tor
+    Allocator() = delete;
+    // no copying
+    Allocator(Allocator& other) = delete;
+    // no moving
+    Allocator(Allocator&& other) = delete;
+
+    Allocator(const VmaAllocatorCreateInfo& info, core::log::Logger& log)
+        : log(log) {
+        VkResult res = vmaCreateAllocator(&info, &allocator);
+        if(res != VK_SUCCESS) {
+            // todo: log, or maybe scream
+            allocator = VK_NULL_HANDLE;
+        }
+        log.info("gfx/vulkan/allocator","created an allocator");
+    }
+
+    ~Allocator() {
+        if(allocator != VK_NULL_HANDLE) {
+            vmaDestroyAllocator(allocator);
+        }
+        log.info("gfx/vulkan/allocator","destroyed an allocator");
+    }
+
+    const VmaAllocator& get() const noexcept {
+        return allocator;
+    }
+};
+
+
+class GpuContext {
+    std::vector<BufferHandle> bufferHandles{};
+
+    core::log::Logger& log;
+    const Configurator& config;
+    Device device;
+    Allocator allocator;
+    ResourceManager manager;
+
+public:
+    GpuContext(PhysicalDeviceHandle physicalDeviceHandle, core::log::Logger& log, const Configurator& config)
+        : log(log), config(config), device(log,config,physicalDeviceHandle),
+        allocator({
+                .physicalDevice = *config.getVulkanPhysicalDevice(physicalDeviceHandle),
+                .device = device.get(),
+                .instance       = *config.getVulkanInstance(),
+                // note: from what I can tell, MoltenVK breaks a call to vkGetBufferMemoryRequirements2KHR
+                // so we have to force it not to use that procedure. We set vma_impl.cpp with
+                // VMA_DEDICATED_ALLOCATION = 0 to avoid that path during buffer allocation
+                .vulkanApiVersion = VK_API_VERSION_1_0
+            }, log), manager(config,allocator.get(),log)
+    {}
+
+    ~GpuContext() {}
+
+    template<size_t N>
+    void CmdBuffers(const std::array<int16_t, N>& heightData) {
+        std::optional<const BufferHandle> bufferHandleSrc = manager.createMappedVertexBuffer(1024 * 1024);
+        std::optional<const BufferHandle> bufferHandleDst = manager.createDeviceLocalVertexBuffer(1024 * 1024);
+
+        bool success = manager.fillMemoryMappedBuffer(*bufferHandleSrc, heightData.data(), sizeof(heightData));
+
+        auto physicalDevice = *config.getBestPhysicalDevice();
+        auto queueFamilyProps = config.getQueueFamilyProperties(physicalDevice);
+
+        VkDevice vulkanDevice = device.get();
+        VkQueue pQueue{};
+        vkGetDeviceQueue(
+            vulkanDevice,
+            0,
+            0,
+            &pQueue
+        );
+
+        if(pQueue == nullptr) {
+            logError("failed to fetch a device queue");
+            return;
         }
 
-        buffers = {};
-        logInfo("destroyed all buffers");
+        const VkCommandPoolCreateInfo cmdPoolCreateInfo {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+            .queueFamilyIndex = 0
+        };
+
+        VkCommandPool cmdPool{};
+        VkResult result = vkCreateCommandPool(
+            vulkanDevice,
+            &cmdPoolCreateInfo,
+            nullptr,
+            &cmdPool
+        );
+
+        if(result != VK_SUCCESS) {
+            logError("could not create a command pool");
+            return;
+        }
+
+        const VkCommandBufferAllocateInfo cmdBufferAllocInfo {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .pNext = nullptr,
+            .commandPool = cmdPool,
+            .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            .commandBufferCount = 1
+        };
+
+        VkCommandBuffer cmdBuffer{};
+        result = vkAllocateCommandBuffers(
+            vulkanDevice,
+            &cmdBufferAllocInfo,
+            &cmdBuffer
+        );
+
+        if(result != VK_SUCCESS) {
+            logError("could not allocate a command pool");
+            return;
+        }
+
+        VkCommandBufferBeginInfo cmdBufferBeginInfo {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .pInheritanceInfo = nullptr
+        };
+
+        result = vkBeginCommandBuffer(
+            cmdBuffer,
+            &cmdBufferBeginInfo
+        );
+
+        if(result != VK_SUCCESS) {
+            logError("could not begin a command buffer");
+            return;
+        }
+
+        Buffer bufferSrc = *manager.getBuffer(*bufferHandleSrc);
+        Buffer bufferDst = *manager.getBuffer(*bufferHandleDst);
+
+        const VkBufferCopy bufferCpy {
+            .srcOffset = 0,// vertexBufferSrc.allocationInfo.offset,
+            .dstOffset = 0,//vertexBufferDst.allocationInfo.offset,
+            .size = bufferSrc.size
+        };
+
+        // copy from buffer 1 to 2
+        vkCmdCopyBuffer(
+            cmdBuffer,
+            bufferSrc.buffer,
+            bufferDst.buffer,
+            1,
+            &bufferCpy
+        );
+
+        result = vkEndCommandBuffer(cmdBuffer);
+
+        if(result != VK_SUCCESS) {
+            logError("could not end command buffer");
+            return;
+        }
+
+        const VkSubmitInfo submitInfo {
+            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            .pNext = nullptr,
+            .waitSemaphoreCount = 0,
+            .pWaitSemaphores = nullptr,
+            .pWaitDstStageMask = nullptr,
+            .commandBufferCount = 1,
+            .pCommandBuffers = &cmdBuffer,
+            .signalSemaphoreCount = 0,
+            .pSignalSemaphores = nullptr
+        };
+
+        result = vkQueueSubmit(
+            pQueue,
+            1,
+            &submitInfo,
+            VK_NULL_HANDLE
+        );
+
+        if(result != VK_SUCCESS) {
+            logError("could not submit queue");
+            return;
+        }
+
+        result = vkQueueWaitIdle(pQueue);
+
+        // free command buffers
+        vkFreeCommandBuffers(
+            vulkanDevice,
+            cmdPool,
+            1,
+            &cmdBuffer
+        );
+        logInfo("freed command buffers");
+
+        // destroy command pools
+        vkDestroyCommandPool(
+            vulkanDevice,
+            cmdPool,
+            nullptr
+        );
+        logInfo("destroyed command pools");
     }
 
-
-
+private:
     // log convenience
     template<typename... Args>
     void logError(const char* msg, Args... args) {

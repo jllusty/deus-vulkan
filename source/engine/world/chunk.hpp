@@ -14,6 +14,8 @@ constexpr const core::i32 CHUNK_RESOLUTION = 33;
 
 // chunk coordinate
 struct Chunk {
+    alignas(std::hardware_destructive_interference_size)
+
     core::i32 x{ 0 };
     core::i32 z{ 0 };
 
