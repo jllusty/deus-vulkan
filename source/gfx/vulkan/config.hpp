@@ -1,5 +1,5 @@
-// gfx/vulkan/config.hpp:
-//     accepts an instance request, returns an instance and a bunch of
+// gfx/vulkan/config.hpp: defines the Configurator, an read-only object used
+// to create an instance on initialization
 #pragma once
 
 #include <vector>
@@ -44,6 +44,8 @@ class Configurator {
     std::vector<VkPhysicalDevice> physicalDevices{};
     std::vector<VkPhysicalDeviceProperties> physicalDeviceProps{};
     std::vector<VkPhysicalDeviceMemoryProperties> physicalDeviceMemoryProps{};
+    // note: these properties are not specific to physical devices
+    std::vector<VkFormatProperties> physicalDeviceFormatProperties{};
 
     // a single physical device can be associated with multiple queues
     std::vector<std::vector<VkQueueFamilyProperties>> queueFamilyProperties{};
@@ -62,6 +64,12 @@ public:
     static std::optional<Configurator> create(InstanceRequest request,
         core::log::Logger& log) noexcept
     {
+        // Dear C++
+        //
+        // I truly wish I could construct this only once via emplacement
+        // into an std::optional. Alas, for you can't see its private constructor.
+        //
+        // If only...
         Configurator config(log);
 
         // instance-level vulkan api
@@ -214,6 +222,24 @@ public:
     std::span<const std::string> getEnabledLayerNames() const noexcept {
         return instanceRequestedLayers;
     }
+
+    std::optional<VkFormatProperties> getPhysicalDeviceFormatProperties(PhysicalDeviceHandle physicalDeviceHandle, VkFormat format) const noexcept {
+        std::optional<VkFormatProperties> result{};
+
+        if(physicalDeviceHandle.id >= physicalDevices.size()) {
+            return result;
+        }
+
+        VkFormatProperties props{};
+        vkGetPhysicalDeviceFormatProperties(
+            physicalDevices[physicalDeviceHandle.id],
+            format,
+            &props
+        );
+        result.emplace(props);
+        return result;
+    }
+
 
 private:
     Configurator(core::log::Logger& log)

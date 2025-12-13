@@ -64,7 +64,7 @@ int main(int argc, char* argv[]) {
     // chunk TOC offset
     std::size_t offsetTOC = sizeof(numChunks);
     // fill and write each chunk's heightmap data (cx,cy)
-    uint16_t lastHeight = 0;
+    int16_t lastHeight = 0;
     for(std::size_t cy = 0; cy < numChunksWide; ++cy) {
         for(std::size_t cx = 0; cx < numChunksWide; ++cx) {
 

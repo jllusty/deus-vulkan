@@ -176,8 +176,12 @@ public:
 
     template<size_t N>
     void CmdBuffers(const std::array<int16_t, N>& heightData) {
-        std::optional<const BufferHandle> bufferHandleSrc = manager.createMappedVertexBuffer(1024 * 1024);
-        std::optional<const BufferHandle> bufferHandleDst = manager.createDeviceLocalVertexBuffer(1024 * 1024);
+        // create image to store heightmap
+        std::optional<const ImageHandle> imageHandle = manager.createImage(N,N,1);
+
+        // create buffer to hold grid mesh vertex data
+        std::optional<const BufferHandle> bufferHandleSrc = manager.createMappedVertexBuffer(N);
+        std::optional<const BufferHandle> bufferHandleDst = manager.createDeviceLocalVertexBuffer(N);
 
         bool success = manager.fillMemoryMappedBuffer(*bufferHandleSrc, heightData.data(), sizeof(heightData));
 
