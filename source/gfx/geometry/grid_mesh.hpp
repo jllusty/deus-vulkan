@@ -10,6 +10,7 @@ struct GridMesh {
     std::vector<core::u16> vertexBufferX{};
     std::vector<core::u16> vertexBufferZ{};
     std::vector<core::u16> indexBuffer{};
+    core::u32 vertexCount{};
     core::u32 indexCount{};
     core::u32 vertexStride{};
 };
@@ -25,6 +26,7 @@ public:
         GridMesh grid{};
 
         // generate grid vertices
+        grid.vertexCount = N * N;
         grid.vertexBufferX.reserve(N * N);
         grid.vertexBufferZ.reserve(N * N);
         for(core::u16 z = 0; z < N; ++z) {
@@ -36,6 +38,7 @@ public:
         // vX: [0, 1, 2, ..., 0, 1, 2, ..., N - 1]
         // vZ: [0, 0, 0, ..., 1, 1, 1, ..., N - 1]
         // generate grid indices
+        grid.indexCount = (N - 1) * (N - 1) * 6;
         grid.indexBuffer.reserve((N - 1) * (N - 1) * 6);
         for(core::u16 z = 0; z < N - 1; ++z) {
             for(core::u16 x = 0; x < N - 1; ++x) {

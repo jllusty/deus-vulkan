@@ -2,9 +2,11 @@
 #pragma once
 
 #include "core/log/logging.hpp"
+#include "gfx/geometry/grid_mesh.hpp"
 #include "gfx/vulkan/config.hpp"
 #include "gfx/vulkan/device.hpp"
 #include "gfx/vulkan/resources.hpp"
+#include "gfx/vulkan/command.hpp"
 
 #include <vulkan/vulkan_core.h>
 
@@ -57,191 +59,85 @@ class GpuContext {
     Device device;
     Allocator allocator;
     ResourceManager manager;
+    Commander cmd;
 
 public:
     GpuContext(PhysicalDeviceHandle physicalDeviceHandle, core::log::Logger& log, const Configurator& config)
-        : log(log), config(config), device(log,config,physicalDeviceHandle),
+        : log(log), config(config),
+        device(log,config,physicalDeviceHandle),
         allocator({
-                .physicalDevice = *config.getVulkanPhysicalDevice(physicalDeviceHandle),
-                .device = device.get(),
-                .instance       = *config.getVulkanInstance(),
-                // note: from what I can tell, MoltenVK breaks a call to vkGetBufferMemoryRequirements2KHR
-                // so we have to force it not to use that procedure. We set vma_impl.cpp with
-                // VMA_DEDICATED_ALLOCATION = 0 to avoid that path during buffer allocation
-                .vulkanApiVersion = VK_API_VERSION_1_0
-            }, log), manager(config,allocator.get(),device.get(),log)
+            .physicalDevice = *config.getVulkanPhysicalDevice(physicalDeviceHandle),
+            .device = device.get(),
+            .instance       = *config.getVulkanInstance(),
+            // note: from what I can tell, MoltenVK breaks a call to vkGetBufferMemoryRequirements2KHR
+            // so we have to force it not to use that procedure. We set vma_impl.cpp with
+            // VMA_DEDICATED_ALLOCATION = 0 to avoid that path during buffer allocation
+            .vulkanApiVersion = VK_API_VERSION_1_0
+        }, log),
+        manager(config,allocator.get(),device.get(),log),
+        cmd(log, config, device.get(), manager)
     {}
 
     ~GpuContext() {}
 
+    // fill an image with heightmap data
     template<size_t N>
-    void CmdBuffers(const std::array<int16_t, N>& heightData) {
+    void CmdBuffers(const std::array<int16_t, N>& heightData, core::i32 heightResolution, const gfx::geometry::GridMesh& gridMesh) {
         // create image to store heightmap
-        std::optional<const ImageHandle> imageHandle = manager.createImage(N,N,1);
+        std::optional<const ImageHandle> imageHandle = manager.createImage(heightResolution,heightResolution,1);
+        // image staging buffer
+        std::optional<const BufferHandle> bufferToImgHandle = manager.createStagingBuffer(heightResolution * heightResolution * sizeof(int16_t));
 
-        // create buffer to hold grid mesh vertex data
-        std::optional<const BufferHandle> bufferHandleSrc = manager.createMappedVertexBuffer(N);
-        std::optional<const BufferHandle> bufferHandleDst = manager.createDeviceLocalVertexBuffer(N);
+        // fill image staging buffer
+        bool heightFillResult = fillMemoryMappedBuffer(*bufferToImgHandle, heightData.data(), heightResolution * heightResolution);
 
-        bool success = manager.fillMemoryMappedBuffer(*bufferHandleSrc, heightData.data(), sizeof(heightData));
+        // fill image from staging buffer
+        // ...
 
-        auto physicalDevice = *config.getBestPhysicalDevice();
-        auto queueFamilyProps = config.getQueueFamilyProperties(physicalDevice);
+        // create buffers to hold grid mesh vertex data
+        std::optional<const BufferHandle> bufferHandleGridX = manager.createDeviceLocalVertexBuffer(gridMesh.vertexCount * sizeof(core::u16));
+        std::optional<const BufferHandle> bufferHandleGridZ = manager.createDeviceLocalVertexBuffer(gridMesh.vertexCount * sizeof(core::u16));
+        // staging buffer for uploads
+        std::optional<const BufferHandle> bufferHandleSrc = manager.createStagingBuffer(gridMesh.vertexCount * sizeof(core::u16));
 
-        VkDevice vulkanDevice = device.get();
-        VkQueue pQueue{};
-        vkGetDeviceQueue(
-            vulkanDevice,
-            0,
-            0,
-            &pQueue
-        );
+        // fill staging buffer, copy to X and Z vertex buffers storing our gridmesh
+        bool fillResult = fillMemoryMappedBuffer(*bufferHandleSrc, gridMesh.vertexBufferX.data(), gridMesh.vertexCount);
+        cmd.begin();
+        cmd.copy(*bufferHandleSrc, *bufferHandleGridX);
+        cmd.submit();
 
-        if(pQueue == nullptr) {
-            logError("failed to fetch a device queue");
-            return;
-        }
-
-        const VkCommandPoolCreateInfo cmdPoolCreateInfo {
-            .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-            .pNext = nullptr,
-            .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-            .queueFamilyIndex = 0
-        };
-
-        VkCommandPool cmdPool{};
-        VkResult result = vkCreateCommandPool(
-            vulkanDevice,
-            &cmdPoolCreateInfo,
-            nullptr,
-            &cmdPool
-        );
-
-        if(result != VK_SUCCESS) {
-            logError("could not create a command pool");
-            return;
-        }
-
-        const VkCommandBufferAllocateInfo cmdBufferAllocInfo {
-            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-            .pNext = nullptr,
-            .commandPool = cmdPool,
-            .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-            .commandBufferCount = 1
-        };
-
-        VkCommandBuffer cmdBuffer{};
-        result = vkAllocateCommandBuffers(
-            vulkanDevice,
-            &cmdBufferAllocInfo,
-            &cmdBuffer
-        );
-
-        if(result != VK_SUCCESS) {
-            logError("could not allocate a command pool");
-            return;
-        }
-
-        VkCommandBufferBeginInfo cmdBufferBeginInfo {
-            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-            .pNext = nullptr,
-            .flags = 0,
-            .pInheritanceInfo = nullptr
-        };
-
-        result = vkBeginCommandBuffer(
-            cmdBuffer,
-            &cmdBufferBeginInfo
-        );
-
-        if(result != VK_SUCCESS) {
-            logError("could not begin a command buffer");
-            return;
-        }
-
-        Buffer bufferSrc = *manager.getBuffer(*bufferHandleSrc);
-        Buffer bufferDst = *manager.getBuffer(*bufferHandleDst);
-
-        const VkBufferCopy bufferCpy {
-            .srcOffset = 0,// vertexBufferSrc.allocationInfo.offset,
-            .dstOffset = 0,//vertexBufferDst.allocationInfo.offset,
-            .size = bufferSrc.size
-        };
-
-        // copy from buffer 1 to 2
-        vkCmdCopyBuffer(
-            cmdBuffer,
-            bufferSrc.buffer,
-            bufferDst.buffer,
-            1,
-            &bufferCpy
-        );
-
-        result = vkEndCommandBuffer(cmdBuffer);
-
-        if(result != VK_SUCCESS) {
-            logError("could not end command buffer");
-            return;
-        }
-
-        const VkSubmitInfo submitInfo {
-            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-            .pNext = nullptr,
-            .waitSemaphoreCount = 0,
-            .pWaitSemaphores = nullptr,
-            .pWaitDstStageMask = nullptr,
-            .commandBufferCount = 1,
-            .pCommandBuffers = &cmdBuffer,
-            .signalSemaphoreCount = 0,
-            .pSignalSemaphores = nullptr
-        };
-
-        result = vkQueueSubmit(
-            pQueue,
-            1,
-            &submitInfo,
-            VK_NULL_HANDLE
-        );
-
-        if(result != VK_SUCCESS) {
-            logError("could not submit queue");
-            return;
-        }
-
-        result = vkQueueWaitIdle(pQueue);
-
-        // free command buffers
-        vkFreeCommandBuffers(
-            vulkanDevice,
-            cmdPool,
-            1,
-            &cmdBuffer
-        );
-        logInfo("freed command buffers");
-
-        // destroy command pools
-        vkDestroyCommandPool(
-            vulkanDevice,
-            cmdPool,
-            nullptr
-        );
-        logInfo("destroyed command pools");
+        fillResult = fillMemoryMappedBuffer(*bufferHandleSrc, gridMesh.vertexBufferZ.data(), gridMesh.vertexCount);
+        cmd.begin();
+        cmd.copy(*bufferHandleSrc, *bufferHandleGridZ);
+        cmd.submit();
     }
 
 private:
+    // fill host-visible buffer
+    template<typename T>
+    bool fillMemoryMappedBuffer(BufferHandle bufferHandle, T* data, std::size_t count) noexcept {
+        std::optional<Buffer> buffer = manager.getBuffer(bufferHandle);
+        void* pAlloc = buffer->allocationInfo.pMappedData;
+
+        std::memcpy(pAlloc, data, count);
+
+        logInfo("filled buffer (%lu) with (%lu) bytes", bufferHandle.id, count);
+        return true;
+    }
+
     // log convenience
     template<typename... Args>
-    void logError(const char* msg, Args... args) {
+    void logError(const char* msg, Args... args) const noexcept {
         log.error("vulkan/context", msg, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
-    void logDebug(const char* msg, Args... args) {
+    void logDebug(const char* msg, Args... args) const noexcept {
         log.debug("vulkan/context", msg, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
-    void logInfo(const char* msg, Args... args) {
+    void logInfo(const char* msg, Args... args) const noexcept {
         log.info("vulkan/context", msg, std::forward<Args>(args)...);
     }
 

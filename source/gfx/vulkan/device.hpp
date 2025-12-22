@@ -99,7 +99,7 @@ public:
             device,
             nullptr
         );
-        log.error("gfx/vulkan/device","destroyed logical device");
+        log.info("gfx/vulkan/device","destroyed logical device");
     }
 
     const VkDevice& get() const noexcept {

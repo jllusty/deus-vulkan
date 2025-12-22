@@ -69,7 +69,7 @@ int main()
     }
 
     // copy read heads into a device-local vertex buffer
-    context.CmdBuffers(chonker.fetch(playerChunk)->heights);
+    context.CmdBuffers(chonker.fetch(playerChunk)->heights, CHUNK_RESOLUTION, gridMesh);
 
     // instance destroyed on config dropping out of scope
 
