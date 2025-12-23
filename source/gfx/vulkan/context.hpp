@@ -91,8 +91,14 @@ public:
         // fill image staging buffer
         bool heightFillResult = fillMemoryMappedBuffer(*bufferToImgHandle, heightData.data(), heightResolution * heightResolution);
 
+        // make heightmap image writeable
+        cmd.begin();
+        cmd.makeWriteable(*imageHandle);
+        cmd.submit();
         // fill image from staging buffer
-        // ...
+        cmd.begin();
+        cmd.copy(*bufferToImgHandle, *imageHandle, heightResolution, heightResolution);
+        cmd.submit();
 
         // create buffers to hold grid mesh vertex data
         std::optional<const BufferHandle> bufferHandleGridX = manager.createDeviceLocalVertexBuffer(gridMesh.vertexCount * sizeof(core::u16));

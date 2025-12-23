@@ -65,10 +65,20 @@ public:
     std::optional<Buffer> getBuffer(BufferHandle handle) const noexcept {
         std::optional<Buffer> result{};
         if(handle.id >= buffers.size()) {
-            logError("attempt to fill buffer with array index (%lu) when only (%lu) buffers exist", handle.id, buffers.size());
+            logError("attempt to fetch buffer with array index (%lu) when only (%lu) buffers exist", handle.id, buffers.size());
             return result;
         }
         result.emplace(buffers[handle.id]);
+        return result;
+    }
+
+    std::optional<Image> getImage(ImageHandle handle) const noexcept {
+        std::optional<Image> result{};
+        if(handle.id >= images.size()) {
+            logError("attempt to fetch image with array index (%lu) when only (%lu) buffers exist", handle.id, buffers.size());
+            return result;
+        }
+        result.emplace(images[handle.id]);
         return result;
     }
 
