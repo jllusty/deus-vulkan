@@ -91,6 +91,7 @@ public:
         // fill image staging buffer
         bool heightFillResult = fillMemoryMappedBuffer(*bufferToImgHandle, heightData.data(), heightResolution * heightResolution);
 
+        // note: how can we minimize total submits?
         // make heightmap image writeable
         cmd.begin();
         cmd.makeWriteable(*imageHandle);
@@ -98,6 +99,10 @@ public:
         // fill image from staging buffer
         cmd.begin();
         cmd.copy(*bufferToImgHandle, *imageHandle, heightResolution, heightResolution);
+        cmd.submit();
+        // make heightmap image readable from a shader
+        cmd.begin();
+        cmd.makeReadable(*imageHandle);
         cmd.submit();
 
         // create buffers to hold grid mesh vertex data

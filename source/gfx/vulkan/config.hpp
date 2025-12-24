@@ -20,10 +20,10 @@ struct PhysicalDeviceHandle {
 };
 
 struct InstanceRequest {
-    std::initializer_list<const char*> requiredLayerNames;
-    std::initializer_list<const char*> requiredExtensionNames;
-    std::initializer_list<const char*> optionalLayerNames;
-    std::initializer_list<const char*> optionalExtensionNames;
+    std::vector<std::string> requiredLayerNames;
+    std::vector<std::string> requiredExtensionNames;
+    std::vector<std::string> optionalLayerNames;
+    std::vector<std::string> optionalExtensionNames;
 };
 
 // supports configuring a single vulkan instance
@@ -458,22 +458,22 @@ private:
     // check what required names we need to encode in our instance creation request
     // as well as what optional names we could encode
     void enumerateRequestableLayerNames(
-        std::initializer_list<const char*> requiredLayerNames,
-        std::initializer_list<const char*> optionalLayerNames
+        std::vector<std::string> requiredLayerNames,
+        std::vector<std::string> optionalLayerNames
     )
     {
         // ensure we can use the user-specified required layers we can use for instance specification
         // if we can't use them, failover
-        for(const char * name : requiredLayerNames) {
+        for(const std::string& name : requiredLayerNames) {
             bool requiredLayerNameUsed = false;
             for(const VkLayerProperties prop : instanceAvailableLayers) {
-                if(std::strcmp(prop.layerName,name) == 0) {
+                if(std::strcmp(prop.layerName,name.c_str()) == 0) {
                     instanceRequestedLayers.push_back(name);
                     requiredLayerNameUsed = true;
                 }
             }
             if(!requiredLayerNameUsed) {
-                logError("could not use requested required layer '%s' for instance creation", name);
+                logError("could not use requested required layer '%s' for instance creation", name.c_str());
                 instanceRequestedLayers.resize(0);
                 return;
             }
@@ -481,16 +481,16 @@ private:
 
         // check if  we can use the user-specified optional layers we can use for instance specification
         // if we can't use them, just report it
-        for(const char * name : optionalLayerNames) {
+        for(const std::string& name : optionalLayerNames) {
             bool optionalLayerNameUsable{ false };
             for(const VkLayerProperties prop : instanceAvailableLayers) {
-                if(std::strcmp(prop.layerName,name) == 0) {
+                if(std::strcmp(prop.layerName,name.c_str()) == 0) {
                     instanceRequestedLayers.push_back(name);
                     optionalLayerNameUsable = true;
                 }
             }
             if(!optionalLayerNameUsable) {
-                logInfo("could not use requested optional layer '%s' for instance creation", name);
+                logInfo("could not use requested optional layer '%s' for instance creation", name.c_str());
             }
         }
     }
@@ -498,22 +498,22 @@ private:
     // check what required names we need to encode in our instance creation request
     // as well as what optional names we could encode
     void enumerateRequestableExtensionNames(
-        std::initializer_list<const char*> requiredExtensionNames,
-        std::initializer_list<const char*> optionalExtensionNames
+        std::vector<std::string> requiredExtensionNames,
+        std::vector<std::string> optionalExtensionNames
     )
     {
         // ensure we can use the user-specified required extensions we can use for instance specification
         // if we can't use them, failover
-        for(const char * name : requiredExtensionNames) {
+        for(const std::string& name : requiredExtensionNames) {
             bool requiredExtensionNameUseable = false;
             for(const VkExtensionProperties prop : instanceAvailableExtensions) {
-                if(std::strcmp(prop.extensionName,name) == 0) {
+                if(std::strcmp(prop.extensionName,name.c_str()) == 0) {
                     instanceRequestedExtensions.push_back(name);
                     requiredExtensionNameUseable = true;
                 }
             }
             if(!requiredExtensionNameUseable) {
-                logError("could not use requested required extension '%s' for instance creation", name);
+                logError("could not use requested required extension '%s' for instance creation", name.c_str());
                 instanceRequestedExtensions.resize(0);
                 return;
             }
@@ -521,16 +521,16 @@ private:
 
         // check if  we can use the user-specified optional extensions we can use for instance specification
         // if we can't use them, just report it
-        for(const char * name : optionalExtensionNames) {
+        for(const std::string& name : optionalExtensionNames) {
             bool optionalExtensionNameUsable{ false };
             for(const VkExtensionProperties prop : instanceAvailableExtensions) {
-                if(std::strcmp(prop.extensionName,name) == 0) {
+                if(std::strcmp(prop.extensionName,name.c_str()) == 0) {
                     instanceRequestedExtensions.push_back(name);
                     optionalExtensionNameUsable = true;
                 }
             }
             if(!optionalExtensionNameUsable) {
-                logInfo("could not use requested optional extension '%s' for instance creation", name);
+                logInfo("could not use requested optional extension '%s' for instance creation", name.c_str());
             }
         }
     }

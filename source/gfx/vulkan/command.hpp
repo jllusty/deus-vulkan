@@ -278,7 +278,7 @@ public:
             .pNext = nullptr,
             .srcAccessMask = 0,
             .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-            .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .oldLayout = img.currentLayout,
             .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
@@ -299,7 +299,51 @@ public:
             &barrier
         );
 
+        // update layout
+        manager.updateImageLayout(handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
         logInfo("command: barrier image (%lu) access -> writeable", handle.id);
+    }
+
+    void makeReadable(ImageHandle handle) noexcept {
+       Image img = *manager.getImage(handle);
+       VkImageSubresourceRange subresourceRange {
+           .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+           .baseMipLevel = 0,
+           .levelCount = 1,
+           .baseArrayLayer = 0,
+           .layerCount = 1
+       };
+       VkImageMemoryBarrier barrier {
+           .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+           .pNext = nullptr,
+           .srcAccessMask = 0,
+           .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+           .oldLayout = img.currentLayout,
+           .newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+           .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+           .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+           .image = img.image,
+           .subresourceRange = subresourceRange
+       };
+
+       vkCmdPipelineBarrier(
+           buffer,
+           VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+           VK_PIPELINE_STAGE_TRANSFER_BIT,
+           0,
+           0,
+           nullptr,
+           0,
+           nullptr,
+           1,
+           &barrier
+       );
+
+       // update layout
+       manager.updateImageLayout(handle, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+       logInfo("command: barrier image (%lu) access -> readable from shader", handle.id);
     }
 
     void copy(BufferHandle bufferHandle, ImageHandle imageHandle, core::u32 imageWidth, core::u32 imageHeight) noexcept {

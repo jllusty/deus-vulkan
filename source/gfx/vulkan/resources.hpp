@@ -214,6 +214,15 @@ public:
         return resultImage;
     }
 
+    bool updateImageLayout(ImageHandle handle, VkImageLayout layout) noexcept {
+        if(handle.id >= images.size()) {
+            logError("attempt to fetch image with array index (%lu) when only (%lu) buffers exist", handle.id, buffers.size());
+            return false;
+        }
+        images[handle.id].currentLayout = layout;
+        return true;
+    }
+
 private:
     std::optional<BufferHandle> createBuffer(std::size_t sizeBytes, const VkBufferCreateInfo& bufferCreateInfo,
         const VmaAllocationCreateInfo& allocCreateInfo) noexcept

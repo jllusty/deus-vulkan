@@ -11,7 +11,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(Vulkan REQUIRED)
-find_package(SFML 3.0 REQUIRED COMPONENTS Window)
+find_package(glfw3 3.3 REQUIRED CONFIG)
+message(STATUS "GLFW3 CMake config dir: ${glfw3_DIR}")
 
 add_subdirectory(external/VulkanMemoryAllocator)
 
@@ -47,7 +48,7 @@ target_link_libraries(VMAImpl
 )
 
 target_link_libraries(VulkanApp
-    PRIVATE Vulkan::Vulkan GPUOpen::VulkanMemoryAllocator VMAImpl SFML::Window
+    PRIVATE Vulkan::Vulkan GPUOpen::VulkanMemoryAllocator VMAImpl glfw
 )
 
 # silence hundreds of warnings from vulkan memory allocator
