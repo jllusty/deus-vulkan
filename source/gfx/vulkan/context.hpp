@@ -7,6 +7,7 @@
 #include "gfx/vulkan/device.hpp"
 #include "gfx/vulkan/resources.hpp"
 #include "gfx/vulkan/command.hpp"
+#include "gfx/vulkan/shader.hpp"
 
 #include <vulkan/vulkan_core.h>
 
@@ -121,6 +122,11 @@ public:
         cmd.begin();
         cmd.copy(*bufferHandleSrc, *bufferHandleGridZ);
         cmd.submit();
+    }
+
+    void Shaders() {
+        Shader frag(log, device.get(), "triangle.frag.spv");
+        Shader vert(log, device.get(), "triangle.vert.spv");
     }
 
 private:

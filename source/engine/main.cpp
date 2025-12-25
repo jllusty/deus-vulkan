@@ -85,6 +85,7 @@ int main()
     context.CmdBuffers(chonker.fetch(playerChunk)->heights, CHUNK_RESOLUTION, gridMesh);
 
     // instance destroyed on config dropping out of scope
+    context.Shaders();
 
     return 0;
 }
