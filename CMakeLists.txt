@@ -24,6 +24,46 @@ add_executable(ChunkBuilder
     source/tools/dem_chunk_builder/main.cpp
 )
 
+# Shader Compilation
+# compiles explicit list of ./asserts/shaders/* into build/assets/shaders/*
+# Find glslangValidator
+find_program(GLSLANG_VALIDATOR glslangValidator HINTS
+  "/opt/homebrew/bin"
+)
+if (NOT GLSLANG_VALIDATOR)
+    message(FATAL_ERROR "glslangValidator not found.")
+endif()
+# set shader src/bin directories, make binary directory
+set(SHADER_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders")
+set(SHADER_BIN_DIR "${CMAKE_BINARY_DIR}/assets/shaders")
+file(MAKE_DIRECTORY "${SHADER_BIN_DIR}")
+
+file(GLOB SHADER_SOURCES
+    "${SHADER_SRC_DIR}/triangle.vert"
+    "${SHADER_SRC_DIR}/triangle.frag"
+)
+if (SHADER_SOURCES STREQUAL "")
+    message(WARNING "No shaders found in: ${SHADER_SRC_DIR}")
+endif()
+
+set(SHADER_SPV_OUTPUTS "")
+foreach(SHADER ${SHADER_SOURCES})
+    get_filename_component(FILE_NAME ${SHADER} NAME)
+    set(SPV "${SHADER_BIN_DIR}/${FILE_NAME}.spv")
+
+    add_custom_command(
+    OUTPUT "${SPV}"
+    COMMAND "${GLSLANG_VALIDATOR}" -V "${SHADER}" -o "${SPV}"
+    DEPENDS "${SHADER}"
+    COMMENT "Compiling shader ${FILE_NAME} -> ${FILE_NAME}.spv"
+    VERBATIM
+  )
+
+    list(APPEND SHADER_SPV_OUTPUTS "${SPV}")
+endforeach()
+add_custom_target(shaders ALL DEPENDS ${SHADER_SPV_OUTPUTS})
+add_dependencies(VulkanApp shaders)
+
 # box vulkan memory allocator into a library
 add_library(VMAImpl
     STATIC source/thirdparty_impl/VulkanMemoryAllocator/vma_impl.cpp
