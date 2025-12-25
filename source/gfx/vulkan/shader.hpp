@@ -20,7 +20,7 @@ class Shader {
     VkShaderModule module{ VK_NULL_HANDLE };
 
     std::string filepath{};
-    std::vector<char> source{};
+    std::vector<uint32_t> source{};
 
 public:
     Shader(core::log::Logger& log, VkDevice device, std::string filename)
@@ -29,12 +29,16 @@ public:
         filepath = SHADER_BIN_DIR + "/" + filename;
         readShaderSource(filepath);
 
+        if(source.empty()) {
+            return;
+        }
+
         VkShaderModuleCreateInfo createInfo{
             .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
             .pNext = nullptr,
             .flags = 0,
-            .codeSize = source.size(),
-            .pCode = reinterpret_cast<const uint32_t*>(source.data())
+            .codeSize = source.size() * sizeof(uint32_t),
+            .pCode = source.data()
         };
 
         VkResult result = vkCreateShaderModule(
@@ -46,11 +50,10 @@ public:
 
         if(result != VK_SUCCESS) {
             module = VK_NULL_HANDLE;
-            log.error("gfx/vulkan/shader","failed to create a vulkan shader module from source at '%s'", filepath.c_str());
+            log.error("gfx/vulkan/shader","failed to create a vulkan shader module '%s'", filepath.c_str());
+            return;
         }
-        else {
-            log.info("gfx/vulkan/shader","created a vulkan shader module from source at '%s'", filepath.c_str());
-        }
+        log.info("gfx/vulkan/shader","created a vulkan shader module '%s'", filepath.c_str());
     }
 
     ~Shader() {
@@ -60,7 +63,7 @@ public:
                 module,
                 nullptr
             );
-            log.info("gfx/vulkan/shader","destroyed the vulkan shader module from source at '%s'", filepath.c_str());
+            log.info("gfx/vulkan/shader","destroyed the vulkan shader module '%s'", filepath.c_str());
         }
     }
 
@@ -77,10 +80,21 @@ private:
             return;
         }
 
-        size_t size = (size_t)ifs.tellg();
-        source.resize(size);
-        ifs.seekg(0);
-        ifs.read(source.data(), size);
+        std::streamsize bytes = (size_t)ifs.tellg();
+        if(bytes <= 0) {
+            log.error("gfx/vulkan/shader","tellg failed or file empty '%s'", filepath.c_str());
+            return;
+        }
+        if(bytes % 4 != 0) {
+            log.error("gfx/vulkan/shader","SPIR-V bytes not a multiple of 4 '%s'", filepath.c_str());
+            return;
+        }
+        source.resize(static_cast<std::size_t>(bytes) / 4);
+        ifs.seekg(0, std::ios::beg);
+        if(!ifs.read(reinterpret_cast<char*>(source.data()), bytes)) {
+            log.error("gfx/vulkan/shader","failed to read %lld bytes from '%s'", static_cast<long long>(bytes), filepath.c_str());
+            source.clear();
+        }
     }
 };
 

@@ -53,7 +53,11 @@ foreach(SHADER ${SHADER_SOURCES})
 
     add_custom_command(
     OUTPUT "${SPV}"
-    COMMAND "${GLSLANG_VALIDATOR}" -V "${SHADER}" -o "${SPV}"
+    COMMAND "${GLSLANG_VALIDATOR}"
+            -V
+            --target-env vulkan1.0
+            "${SHADER}"
+            -o "${SPV}"
     DEPENDS "${SHADER}"
     COMMENT "Compiling shader ${FILE_NAME} -> ${FILE_NAME}.spv"
     VERBATIM

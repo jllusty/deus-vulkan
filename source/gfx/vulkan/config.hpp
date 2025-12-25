@@ -543,12 +543,13 @@ private:
         const char* engineName)
     {
         VkApplicationInfo appInfo{
-            VK_STRUCTURE_TYPE_APPLICATION_INFO,
-            nullptr,
-            applicationName,
-            0,
-            engineName,
-            *apiVersion
+            .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+            .pNext = nullptr,
+            .pApplicationName = applicationName,
+            .applicationVersion = 0,
+            .pEngineName = engineName,
+            .engineVersion = 0,
+            .apiVersion = *apiVersion
         };
 
         // flags check
