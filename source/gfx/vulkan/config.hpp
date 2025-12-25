@@ -1,5 +1,5 @@
-// gfx/vulkan/config.hpp: defines the Configurator, an read-only object used
-// to create an instance on initialization
+// gfx/vulkan/config.hpp: defines the Configurator, a read-only object that manages
+// the lifetime of a single Vulkan instance and queries device properties upfront at init
 #pragma once
 
 #include <vector>
@@ -25,6 +25,9 @@ struct InstanceRequest {
     std::vector<std::string> optionalLayerNames;
     std::vector<std::string> optionalExtensionNames;
 };
+
+// note: if the entirety of configurator is optionally returned in the first place,
+// we might as well throw away the optional on its members
 
 // supports configuring a single vulkan instance
 class Configurator {
