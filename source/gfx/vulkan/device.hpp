@@ -40,6 +40,9 @@ public:
                 extensionNames.push_back("VK_KHR_portability_subset");
             }
         }
+        // enable creating swapchains
+        extensionNames.push_back("VK_KHR_swapchain");
+        log.info("gfx/vulkan/Device","enabling VK_KHR_swapchain");
 
         // create buffer for extension name pointers
         std::vector<const char*> extensionNamePtrs{};

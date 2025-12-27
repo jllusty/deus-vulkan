@@ -6,8 +6,8 @@
 
 #include <vulkan/vulkan_core.h>
 
-#include <GLFW/glfw3.h>
 #define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
 
 namespace gfx::vulkan {
 
@@ -61,6 +61,11 @@ public:
         }
     }
 
+    Window(const Window&) = delete;
+    Window& operator=(const Window&) = delete;
+    Window(Window&&) = delete;
+    Window& operator=(Window&&) = delete;
+
     const std::vector<std::string> getRequiredExtensions() const noexcept {
         return extensionNames;
     }
@@ -78,7 +83,7 @@ class Surface {
     VkSurfaceKHR surface{ VK_NULL_HANDLE };
 
 public:
-    Surface(core::log::Logger& log, Window window, VkInstance instance)
+    Surface(core::log::Logger& log, Window& window, VkInstance instance)
         : log(log), instance(instance)
     {
         VkResult result = glfwCreateWindowSurface(

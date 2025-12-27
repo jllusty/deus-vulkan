@@ -87,5 +87,8 @@ int main()
     // instance destroyed on config dropping out of scope
     context.Shaders();
 
+    // acquire swapchain
+    context.AcquireSwapchain(surface.get());
+
     return 0;
 }

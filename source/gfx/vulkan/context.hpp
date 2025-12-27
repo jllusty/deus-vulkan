@@ -8,6 +8,7 @@
 #include "gfx/vulkan/resources.hpp"
 #include "gfx/vulkan/command.hpp"
 #include "gfx/vulkan/shader.hpp"
+#include "gfx/vulkan/swapchain.hpp"
 
 #include <vulkan/vulkan_core.h>
 
@@ -57,6 +58,7 @@ class GpuContext {
 
     core::log::Logger& log;
     const Configurator& config;
+    PhysicalDeviceHandle physicalDeviceHandle;
     Device device;
     Allocator allocator;
     ResourceManager manager;
@@ -64,7 +66,7 @@ class GpuContext {
 
 public:
     GpuContext(PhysicalDeviceHandle physicalDeviceHandle, core::log::Logger& log, const Configurator& config)
-        : log(log), config(config),
+        : log(log), config(config), physicalDeviceHandle(physicalDeviceHandle),
         device(log,config,physicalDeviceHandle),
         allocator({
             .physicalDevice = *config.getVulkanPhysicalDevice(physicalDeviceHandle),
@@ -80,6 +82,13 @@ public:
     {}
 
     ~GpuContext() {}
+
+    // todo: should be moved to resource manager
+    void AcquireSwapchain(VkSurfaceKHR surface) {
+        SwapchainManager renderer(log,config,physicalDeviceHandle,device.get());
+        bool result = renderer.createSwapchain(0,surface);
+        result = renderer.recreateSwapchain(0,surface);
+    }
 
     // fill an image with heightmap data
     template<size_t N>
