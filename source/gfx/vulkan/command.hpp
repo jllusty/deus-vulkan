@@ -375,22 +375,76 @@ public:
         logInfo("command: copy buffer (%lu) -> image (%lu)", bufferHandle.id, imageHandle.id);
     }
 
+    void beginRenderpass() noexcept {
+        VkRenderPassCreateInfo renderPassCreateInfo {
+            .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .attachmentCount = 0,
+            .pAttachments = nullptr,
+            .subpassCount = 0,
+            .pSubpasses = nullptr,
+            .dependencyCount = 0,
+            .pDependencies = nullptr
+        };
+        VkRenderPass renderPass{};
+        VkResult result = vkCreateRenderPass(
+            vulkanDevice,
+            &renderPassCreateInfo,
+            nullptr,
+            &renderPass
+        );
+        if(result != VK_SUCCESS) {
+            logError("failed to create render pass");
+            return;
+        }
+
+        VkFramebufferCreateInfo framebufferCreateInfo {
+            .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .renderPass = renderPass,
+            .attachmentCount = 0,
+            .pAttachments = nullptr,
+            .width = 800,
+            .height = 600,
+            .layers = 1
+        };
+        VkFramebuffer framebuffer{VK_NULL_HANDLE};
+
+        VkRenderPassBeginInfo beginInfo {
+            .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+            .pNext = nullptr,
+            .renderPass = renderPass,
+            .framebuffer = framebuffer,
+            .renderArea = VkRect2D{.offset = VkOffset2D{ 0, 0}, .extent = VkExtent2D{ 800, 600} },
+            .clearValueCount = 0,
+            .pClearValues = nullptr
+        };
+        VkSubpassContents contents{ VK_SUBPASS_CONTENTS_INLINE };
+        vkCmdBeginRenderPass(
+            buffer,
+            &beginInfo,
+            contents
+        );
+    }
+
 
 private:
     // log convenience
     template<typename... Args>
     void logError(const char* msg, Args... args) {
-        log.error("vulkan/command", msg, std::forward<Args>(args)...);
+        log.error("gfx/vulkan/command", msg, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
     void logDebug(const char* msg, Args... args) {
-        log.debug("vulkan/command", msg, std::forward<Args>(args)...);
+        log.debug("gfx/vulkan/command", msg, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
     void logInfo(const char* msg, Args... args) {
-        log.info("vulkan/command", msg, std::forward<Args>(args)...);
+        log.info("gfx/vulkan/command", msg, std::forward<Args>(args)...);
     }
 };
 

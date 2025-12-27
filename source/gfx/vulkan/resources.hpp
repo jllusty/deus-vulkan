@@ -275,17 +275,17 @@ private:
     // log convenience
     template<typename... Args>
     void logError(const char* msg, Args... args) const noexcept {
-        log.error("vulkan/resource-manager", msg, std::forward<Args>(args)...);
+        log.error("gfx/vulkan/resource-manager", msg, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
     void logDebug(const char* msg, Args... args) const noexcept {
-        log.debug("vulkan/resource-manager", msg, std::forward<Args>(args)...);
+        log.debug("gfx/vulkan/resource-manager", msg, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
     void logInfo(const char* msg, Args... args) const noexcept {
-        log.info("vulkan/resource-manager", msg, std::forward<Args>(args)...);
+        log.info("gfx/vulkan/resource-manager", msg, std::forward<Args>(args)...);
     }
 };
 

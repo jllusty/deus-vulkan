@@ -43,7 +43,7 @@ public:
 
     // happens on application startup / window creation as well as resizing
     // returns true if the new swapchain is valid
-    bool createSwapchain(uint32_t queueGraphicsFamily, VkSurfaceKHR surface) {
+    bool createSwapchain(uint32_t queueGraphicsFamily, VkSurfaceKHR surface) noexcept {
         std::optional<SwapchainSupport> optSupport = getSwapchainSupport(queueGraphicsFamily, surface);
         if(!optSupport.has_value()) {
             logError("could not acquire swapchain: no support for presenting");
@@ -135,7 +135,7 @@ public:
         return true;
     }
 
-    bool recreateSwapchain(uint32_t queueFamilyIndex, VkSurfaceKHR surface) {
+    bool recreateSwapchain(uint32_t queueFamilyIndex, VkSurfaceKHR surface) noexcept {
         // frames may be in-flight when we want to cleanup our resources
         vkDeviceWaitIdle(vulkanDevice);
         // cleanup swapchain images
@@ -202,7 +202,7 @@ public:
     }
 
 private:
-    void destroySwapchainImageViews() {
+    void destroySwapchainImageViews() noexcept {
         for(VkImageView view : views) {
             vkDestroyImageView(
                 vulkanDevice,
@@ -214,7 +214,7 @@ private:
         logInfo("destroyed %lu swapchain image views", images.size());
     }
 
-    void destroySwapchain() {
+    void destroySwapchain() noexcept {
         vkDestroySwapchainKHR(
             vulkanDevice,
             active,
@@ -228,17 +228,17 @@ private:
     // log convenience
     template<typename... Args>
     void logError(const char* msg, Args... args) const noexcept {
-        log.error("vulkan/swapchain", msg, std::forward<Args>(args)...);
+        log.error("gfx/vulkan/swapchain", msg, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
     void logDebug(const char* msg, Args... args) const noexcept {
-        log.debug("vulkan/swapchain", msg, std::forward<Args>(args)...);
+        log.debug("gfx/vulkan/swapchain", msg, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
     void logInfo(const char* msg, Args... args) const noexcept {
-        log.info("vulkan/swapchain", msg, std::forward<Args>(args)...);
+        log.info("gfx/vulkan/swapchain", msg, std::forward<Args>(args)...);
     }
 };
 

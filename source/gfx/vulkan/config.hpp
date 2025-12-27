@@ -254,17 +254,17 @@ private:
     // log convenience
     template<typename... Args>
     void logError(const char* msg, Args... args) {
-        log.error("vulkan/configurator", msg, std::forward<Args>(args)...);
+        log.error("gfx/vulkan/configurator", msg, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
     void logDebug(const char* msg, Args... args) {
-        log.debug("vulkan/configurator", msg, std::forward<Args>(args)...);
+        log.debug("gfx/vulkan/configurator", msg, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
     void logInfo(const char* msg, Args... args) {
-        log.info("vulkan/configurator", msg, std::forward<Args>(args)...);
+        log.info("gfx/vulkan/configurator", msg, std::forward<Args>(args)...);
     }
 
     void enumeratePhysicalDevices() {
