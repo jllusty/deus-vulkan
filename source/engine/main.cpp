@@ -84,11 +84,11 @@ int main()
     // copy read heads into a device-local vertex buffer
     context.CmdBuffers(chonker.fetch(playerChunk)->heights, CHUNK_RESOLUTION, gridMesh);
 
-    // instance destroyed on config dropping out of scope
-    context.Shaders();
-
     // acquire swapchain
     context.AcquireSwapchain(surface.get());
+
+    // instance destroyed on config dropping out of scope
+    context.CreateGraphicsPipeline();
 
     while(!glfwWindowShouldClose(window.get())) {
         glfwPollEvents();
@@ -96,6 +96,8 @@ int main()
         // todo: on resize: reacquire swapchain
         context.AcquireSubmitPresent();
     }
+
+    context.DestroyGraphicsPipeline();
 
     return 0;
 }

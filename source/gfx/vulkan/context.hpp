@@ -65,6 +65,9 @@ class GpuContext {
     Commander cmd;
     SwapchainManager swapchain;
     std::vector<VkSemaphore> submit;
+    // graphics pipeline (move into an owner class)
+    VkPipelineLayout graphicsPipelineLayout { VK_NULL_HANDLE };
+    VkPipeline graphicsPipeline { VK_NULL_HANDLE };
 
 public:
     GpuContext(PhysicalDeviceHandle physicalDeviceHandle, core::log::Logger& log, const Configurator& config)
@@ -86,6 +89,205 @@ public:
 
     ~GpuContext() {}
 
+    void CreateGraphicsPipeline() noexcept {
+        Shader vert(log, device.get(), "triangle.vert.spv");
+        Shader frag(log, device.get(), "triangle.frag.spv");
+
+        // vertex -> frag
+        VkPipelineShaderStageCreateInfo stages[2] = {
+            {
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                .pNext = nullptr,
+                .flags = 0,
+                .stage = VK_SHADER_STAGE_VERTEX_BIT,
+                .module = vert.get(),
+                .pName = "main",
+                .pSpecializationInfo = nullptr
+            },
+            {
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                .pNext = nullptr,
+                .flags = 0,
+                .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+                .module = frag.get(),
+                .pName = "main",
+                .pSpecializationInfo = nullptr
+            }
+        };
+
+        VkPipelineVertexInputStateCreateInfo vertexInput {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .vertexBindingDescriptionCount = 0,
+            .pVertexBindingDescriptions = nullptr,
+            .vertexAttributeDescriptionCount = 0,
+            .pVertexAttributeDescriptions = nullptr
+        };
+
+        VkPipelineInputAssemblyStateCreateInfo inputAssembly {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+            .primitiveRestartEnable = 0
+        };
+
+        // scissor and viewport are dynamic - do not specify pointers
+        VkPipelineViewportStateCreateInfo viewportState {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .viewportCount = 1,
+            .pViewports = nullptr,
+            .scissorCount = 1,
+            .pScissors = nullptr
+        };
+
+        VkPipelineRasterizationStateCreateInfo rasterizer {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .depthClampEnable = 0,
+            .rasterizerDiscardEnable = 0,
+            .polygonMode = VK_POLYGON_MODE_FILL,
+            .cullMode = VK_CULL_MODE_NONE,
+            .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+            .depthBiasEnable = 0,
+            .depthBiasConstantFactor = 0.f,
+            .depthBiasClamp = 0.f,
+            .depthBiasSlopeFactor = 0.f,
+            .lineWidth = 1.f
+        };
+
+        VkPipelineMultisampleStateCreateInfo multisample {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+            .sampleShadingEnable = 0,
+            .minSampleShading = 0.f,
+            .pSampleMask = nullptr,
+            .alphaToCoverageEnable = 0,
+            .alphaToOneEnable = 0
+        };
+
+        VkPipelineColorBlendAttachmentState colorBlendAttachment {
+            .blendEnable = 0,
+            .srcColorBlendFactor = VK_BLEND_FACTOR_ZERO,
+            .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,
+            .colorBlendOp = VK_BLEND_OP_ADD,
+            .srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+            .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+            .alphaBlendOp = VK_BLEND_OP_ADD,
+            .colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
+                VK_COLOR_COMPONENT_G_BIT |
+                VK_COLOR_COMPONENT_B_BIT |
+                VK_COLOR_COMPONENT_A_BIT
+        };
+
+        VkPipelineColorBlendStateCreateInfo colorBlend {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .logicOpEnable = 0,
+            .logicOp = VK_LOGIC_OP_CLEAR,
+            .attachmentCount = 1,
+            .pAttachments = &colorBlendAttachment,
+            .blendConstants = {0.f, 0.f, 0.f, 0.f}
+        };
+
+        VkDynamicState dynamics[] = {
+            VK_DYNAMIC_STATE_VIEWPORT,
+            VK_DYNAMIC_STATE_SCISSOR
+        };
+
+        VkPipelineDynamicStateCreateInfo dynamicState {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .dynamicStateCount = 2,
+            .pDynamicStates = dynamics
+        };
+
+        VkPipelineLayoutCreateInfo layoutInfo {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .setLayoutCount = 0,
+            .pSetLayouts = nullptr,
+            .pushConstantRangeCount = 0,
+            .pPushConstantRanges = nullptr
+        };
+
+        VkResult result = vkCreatePipelineLayout(
+            device.get(),
+            &layoutInfo,
+            nullptr,
+            &graphicsPipelineLayout
+        );
+        if(result != VK_SUCCESS) {
+            logError("could not create graphics pipeline layout");
+            graphicsPipelineLayout = VK_NULL_HANDLE;
+            return;
+        }
+
+        VkGraphicsPipelineCreateInfo pipelineInfo {
+            .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .stageCount = 2,
+            .pStages = stages,
+            .pVertexInputState = &vertexInput,
+            .pInputAssemblyState = &inputAssembly,
+            .pTessellationState = nullptr,
+            .pViewportState = &viewportState,
+            .pRasterizationState = &rasterizer,
+            .pMultisampleState = &multisample,
+            .pDepthStencilState = nullptr,
+            .pColorBlendState = &colorBlend,
+            .pDynamicState = &dynamicState,
+            .layout = graphicsPipelineLayout,
+            .renderPass = swapchain.getRenderPass(),
+            .subpass = 0,
+            .basePipelineHandle = VK_NULL_HANDLE,
+            .basePipelineIndex = 0
+        };
+
+        // create pipeline
+        result = vkCreateGraphicsPipelines(
+            device.get(),
+            VK_NULL_HANDLE,
+            1,
+            &pipelineInfo,
+            nullptr,
+            &graphicsPipeline
+        );
+        if(result != VK_SUCCESS) {
+            logError("could not create graphics pipeline");
+            graphicsPipeline = VK_NULL_HANDLE;
+        }
+    }
+
+    void DestroyGraphicsPipeline() noexcept {
+        vkDeviceWaitIdle(device.get());
+        // destroy pipeline + layout
+        if(graphicsPipeline != VK_NULL_HANDLE) {
+            vkDestroyPipeline(
+                device.get(),
+                graphicsPipeline,
+                nullptr
+            );
+        }
+        if(graphicsPipelineLayout != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(
+                device.get(),
+                graphicsPipelineLayout,
+                nullptr
+            );
+        }
+    }
+
     void AcquireSubmitPresent() noexcept {
         cmd.awaitAndResetFrameFence();
 
@@ -94,9 +296,25 @@ public:
         // as such, it is perfectly safe to copy from our swapchain manager
         VkSemaphore acquire = swapchain.getAcquireSemaphore();
 
+        // call vkAcquireNextImage, set submit semaphore to the corresponding index
         uint32_t imageIndex = swapchain.acquireImage();
         VkSemaphore submit = swapchain.getSubmitSemaphore(imageIndex);
         logInfo("acquired swapchain index %d",imageIndex);
+
+        // set viewport + scissor
+        VkExtent2D extent = swapchain.getExtent();
+        VkViewport viewport {
+            .x = 0,
+            .y = 0,
+            .width = static_cast<float>(extent.width),
+            .height = static_cast<float>(extent.height),
+            .minDepth = 0.f,
+            .maxDepth = 1.f
+        };
+        VkRect2D scissor {
+            .offset = {.x = 0, .y = 0},
+            .extent = extent
+        };
 
         // this call should be moved into swapchain manager
         VkClearColorValue clearColorValue {
@@ -112,6 +330,11 @@ public:
             swapchain.getExtent(),
             clearValue
         );
+
+        cmd.bindPipeline(VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+        cmd.setViewportAndScissor(viewport, scissor);
+        cmd.draw();
+
         cmd.endRenderPass();
 
         cmd.submitSwapchain(acquire, submit);

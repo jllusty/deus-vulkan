@@ -261,6 +261,7 @@ public:
         if(result != VK_SUCCESS) {
             logError("could not submit queue");
         }
+        logInfo("enqued queue submit");
     }
 
     void presentSwapchain(VkSemaphore renderFinished, VkSwapchainKHR swapchain, uint32_t imageIndex) {
@@ -277,6 +278,7 @@ public:
         };
 
         vkQueuePresentKHR(queue, &info);
+        logInfo("enqued queue present");
     }
 
     // no fences are used inside of the command wrappers
@@ -430,12 +432,45 @@ public:
             &beginInfo,
             contents
         );
+
+        logInfo("command: begin render pass");
     }
 
-    void endRenderPass() {
+    void endRenderPass() noexcept {
         vkCmdEndRenderPass(buffer);
+        logInfo("command: end render pass");
     }
 
+    void bindPipeline(VkPipelineBindPoint bindPoint, VkPipeline pipeline) noexcept {
+        vkCmdBindPipeline(
+            buffer,
+            bindPoint,
+            pipeline
+        );
+        logInfo("command: bind pipeline");
+    }
+
+    void setViewportAndScissor(VkViewport viewport, VkRect2D scissor) noexcept {
+        vkCmdSetViewport(
+            buffer,
+            0,
+            1,
+            &viewport
+        );
+        vkCmdSetScissor(
+            buffer,
+            0,
+            1,
+            &scissor
+        );
+        logInfo("command: set viewport + scissor");
+    }
+
+    void draw() noexcept {
+        vkCmdDraw(buffer, 3, 1, 0, 0);
+
+        logInfo("command: draw");
+    }
 
 private:
     // log convenience
