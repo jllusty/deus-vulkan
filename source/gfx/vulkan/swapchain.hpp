@@ -28,6 +28,13 @@ class SwapchainManager {
     VkFormat format{};
     std::vector<VkImage> images{};
     std::vector<VkImageView> views{};
+    VkRenderPass renderPass{};
+    std::vector<VkFramebuffer> framebuffers{};
+    // semaphores for swapchain image availability and submission
+    // note: does not need to be recreated when recreating a swapchain
+    // note: need as many acquire semaphores as we do in-flight frames
+    VkSemaphore acquire{};
+    std::vector<VkSemaphore> submit{};
 
 public:
     SwapchainManager(core::log::Logger& log, const Configurator& config, PhysicalDeviceHandle handle, VkDevice vulkanDevice)
@@ -36,7 +43,10 @@ public:
     {}
 
     ~SwapchainManager() {
-        // todo: destroy framebuffers
+        vkDeviceWaitIdle(vulkanDevice);
+        destroySemaphores();
+        destroyFramebuffers();
+        destroyRenderPass();
         destroySwapchainImageViews();
         destroySwapchain();
     }
@@ -51,8 +61,11 @@ public:
         }
         SwapchainSupport support = *optSupport;
 
+        // set extent
+        extent = support.caps.currentExtent;
+        // set format
         // todo: check if the formats we are requesting exist in the support struct
-        VkFormat imageFormat = VK_FORMAT_B8G8R8A8_SRGB;
+        VkFormat format = VK_FORMAT_B8G8R8A8_SRGB;
         VkColorSpaceKHR colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
         VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
 
@@ -63,7 +76,7 @@ public:
             .flags = 0,
             .surface = surface,
             .minImageCount = support.caps.minImageCount,
-            .imageFormat = imageFormat,
+            .imageFormat = format,
             .imageColorSpace = colorSpace,
             .imageExtent = support.caps.currentExtent,
             .imageArrayLayers = 1,
@@ -113,7 +126,7 @@ public:
                 .flags = 0,
                 .image = img,
                 .viewType = VK_IMAGE_VIEW_TYPE_2D,
-                .format = imageFormat,
+                .format = format,
                 .components = components,
                 .subresourceRange = subresourceRange
             };
@@ -132,17 +145,157 @@ public:
         }
         logInfo("created %lu swapchain image views", views.size());
 
+        // create renderpass
+        VkAttachmentDescription color{
+            .flags = 0,
+            .format = format,
+            .samples = VK_SAMPLE_COUNT_1_BIT,
+            .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+        };
+        VkAttachmentReference colorReference {
+            .attachment = 0,
+            .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+        };
+        VkSubpassDescription subpass {
+            .flags = 0,
+            .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+            .inputAttachmentCount = 0,
+            .pInputAttachments = nullptr,
+            .colorAttachmentCount = 1,
+            .pColorAttachments = &colorReference,
+            .pResolveAttachments = nullptr,
+            .pDepthStencilAttachment = nullptr,
+            .preserveAttachmentCount = 0,
+            .pPreserveAttachments = nullptr
+        };
+        VkSubpassDependency subpassDep {
+            .srcSubpass = VK_SUBPASS_EXTERNAL,
+            .dstSubpass = 0,
+            .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            .srcAccessMask = VK_ACCESS_NONE,
+            .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+            .dependencyFlags = 0
+        };
+        VkRenderPassCreateInfo renderPassCreateInfo {
+            .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .attachmentCount = 1,
+            .pAttachments = &color,
+            .subpassCount = 1,
+            .pSubpasses = &subpass,
+            .dependencyCount = 1,
+            .pDependencies = &subpassDep
+        };
+        result = vkCreateRenderPass(
+            vulkanDevice,
+            &renderPassCreateInfo,
+            nullptr,
+            &renderPass
+        );
+        if(result != VK_SUCCESS) {
+            logError("failed to create render pass");
+            renderPass = VK_NULL_HANDLE;
+            return false;
+        }
+
+        // create framebuffers
+        for(VkImageView view : views) {
+            VkFramebufferCreateInfo framebufferCreateInfo {
+                .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+                .pNext = nullptr,
+                .flags = 0,
+                .renderPass = renderPass,
+                .attachmentCount = 1,
+                .pAttachments = &view,
+                .width = extent.width,
+                .height = extent.height,
+                .layers = 1
+            };
+            VkFramebuffer framebuffer{VK_NULL_HANDLE};
+            VkResult result = vkCreateFramebuffer(
+                vulkanDevice,
+                &framebufferCreateInfo,
+                nullptr,
+                &framebuffer
+            );
+            if(result != VK_SUCCESS) {
+                logError("could not create framebuffer from image view");
+                return false;
+            }
+            framebuffers.push_back(framebuffer);
+        }
+
+        // create image acquire semaphore for use with vkAcquire
+        VkSemaphoreCreateInfo semaphoreCreateInfo {
+            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0
+        };
+        result = vkCreateSemaphore(
+            vulkanDevice,
+            &semaphoreCreateInfo,
+            nullptr,
+            &acquire
+        );
+        if(result != VK_SUCCESS) {
+            logError("could not create swapchain image acquire semaphore");
+            return false;
+        }
+
+        // create image submission semaphores for use with submit + present
+        submit.reserve(imgCount);
+        for(std::size_t i = 0; i < imgCount; ++i) {
+            VkSemaphore sub{VK_NULL_HANDLE};
+            VkSemaphoreCreateInfo semaphoreCreateInfo {
+                .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+                .pNext = nullptr,
+                .flags = 0
+            };
+            result = vkCreateSemaphore(
+                vulkanDevice,
+                &semaphoreCreateInfo,
+                nullptr,
+                &sub
+            );
+            if(result != VK_SUCCESS) {
+                logError("could not create swapchain image submit semaphore");
+                return false;
+            }
+            submit.push_back(sub);
+        }
+
         return true;
     }
 
     bool recreateSwapchain(uint32_t queueFamilyIndex, VkSurfaceKHR surface) noexcept {
+        // do not recreate image available semaphore
         // frames may be in-flight when we want to cleanup our resources
         vkDeviceWaitIdle(vulkanDevice);
-        // cleanup swapchain images
+        destroyFramebuffers();
+        destroyRenderPass();
         destroySwapchainImageViews();
         destroySwapchain();
         // create new swapchain
         return createSwapchain(queueFamilyIndex, surface);
+    }
+
+    VkRenderPass getRenderPass() const noexcept {
+        return renderPass;
+    }
+
+    std::vector<VkFramebuffer> getFramebuffers() const noexcept {
+        return framebuffers;
+    }
+
+    VkExtent2D getExtent() const noexcept {
+        return extent;
     }
 
     // query a physical device for swapchain capabilities, formats, and present modes for a specified surface and queueFamilyIndex
@@ -201,7 +354,78 @@ public:
         return support;
     }
 
+    // signals imageAvailable, not const
+    uint32_t acquireImage() noexcept {
+        uint32_t imageIndex{ 0 };
+        VkResult result = vkAcquireNextImageKHR(
+            vulkanDevice,
+            active,
+            UINT64_MAX,
+            acquire,
+            VK_NULL_HANDLE,
+            &imageIndex
+        );
+        if(result != VK_SUCCESS) {
+            logError("could not acquire next swapchain image");
+        }
+        return imageIndex;
+    }
+
+    VkSwapchainKHR get() const noexcept {
+        return active;
+    }
+
+    VkSemaphore getAcquireSemaphore() const noexcept  {
+        return acquire;
+    }
+
+    VkSemaphore getSubmitSemaphore(uint32_t index) const noexcept {
+        return submit[index];
+    }
+
 private:
+    void destroySemaphores() noexcept {
+        for(std::size_t i = 0; i < submit.size(); ++i) {
+            vkDestroySemaphore(
+                vulkanDevice,
+                submit[i],
+                nullptr
+            );
+        }
+        submit.resize(0);
+        vkDestroySemaphore(
+            vulkanDevice,
+            acquire,
+            nullptr
+        );
+        logInfo("destroyed swapchain image acquire and submit semaphores");
+    }
+
+    void destroyFramebuffers() noexcept {
+        for(VkFramebuffer framebuffer : framebuffers) {
+            vkDestroyFramebuffer(
+                vulkanDevice,
+                framebuffer,
+                nullptr
+            );
+        }
+        std::size_t numFramebuffers = framebuffers.size();
+        framebuffers.resize(0);
+        logInfo("destroyed %lu framebuffers", numFramebuffers);
+    }
+
+    void destroyRenderPass() noexcept {
+        if(renderPass != VK_NULL_HANDLE) {
+            vkDestroyRenderPass(
+                vulkanDevice,
+                renderPass,
+                nullptr
+            );
+            renderPass = VK_NULL_HANDLE;
+            logInfo("destroyed a render pass");
+        }
+    }
+
     void destroySwapchainImageViews() noexcept {
         for(VkImageView view : views) {
             vkDestroyImageView(

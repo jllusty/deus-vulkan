@@ -148,34 +148,25 @@ public:
     Commander(Commander&&) = delete;
     Commander& operator=(Commander&&) = delete;
 
-    // awaits writable command buffer and resets the fence used in submission
-    bool begin() noexcept {
-        // await for resettable command pool
-        VkResult result = vkWaitForFences(
+    void awaitAndResetFrameFence() noexcept {
+        vkWaitForFences(
             vulkanDevice,
             1,
             &frame,
             VK_TRUE,
             UINT64_MAX
         );
-        if(result != VK_SUCCESS) {
-            logError("could not wait for fences");
-            return false;
-        }
-
-        // reset fence
-        result = vkResetFences(
+        vkResetFences(
             vulkanDevice,
             1,
             &frame
         );
-        if(result != VK_SUCCESS) {
-            logError("could not reset frame fence");
-            return false;
-        }
+    }
 
+    // this uses our frame-level fence, and it assumes we've called the awaitAndResetFrameFence
+    bool begin() noexcept {
         // reset buffer
-        result = vkResetCommandBuffer(buffer, 0);
+        VkResult result = vkResetCommandBuffer(buffer, 0);
         if(result != VK_SUCCESS) {
             logError("could not reset command buffer");
             return false;
@@ -204,6 +195,7 @@ public:
     }
 
     // ends the command buffer, and then submits to the queue
+    // no semaphores in this base version
     bool submit() noexcept {
         VkResult result = vkEndCommandBuffer(buffer);
         if(result != VK_SUCCESS) {
@@ -239,6 +231,52 @@ public:
 
         logInfo("submitted command buffer");
         return true;
+    }
+
+    void submitSwapchain(VkSemaphore imageAvailable, VkSemaphore renderFinished) {
+        VkResult result = vkEndCommandBuffer(buffer);
+        if(result != VK_SUCCESS) {
+            logError("could not end command buffer");
+        }
+
+        VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        VkSubmitInfo info {
+            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            .pNext = nullptr,
+            .waitSemaphoreCount = 1,
+            .pWaitSemaphores = &imageAvailable,
+            .pWaitDstStageMask = &waitStage,
+            .commandBufferCount = 1,
+            .pCommandBuffers = &buffer,
+            .signalSemaphoreCount = 1,
+            .pSignalSemaphores = &renderFinished
+        };
+
+        result = vkQueueSubmit(
+            queue,
+            1,
+            &info,
+            frame
+        );
+        if(result != VK_SUCCESS) {
+            logError("could not submit queue");
+        }
+    }
+
+    void presentSwapchain(VkSemaphore renderFinished, VkSwapchainKHR swapchain, uint32_t imageIndex) {
+        VkResult result{};
+        VkPresentInfoKHR info {
+            .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+            .pNext = nullptr,
+            .waitSemaphoreCount = 1,
+            .pWaitSemaphores = &renderFinished,
+            .swapchainCount = 1,
+            .pSwapchains = &swapchain,
+            .pImageIndices = &imageIndex,
+            .pResults = &result
+        };
+
+        vkQueuePresentKHR(queue, &info);
     }
 
     // no fences are used inside of the command wrappers
@@ -375,58 +413,27 @@ public:
         logInfo("command: copy buffer (%lu) -> image (%lu)", bufferHandle.id, imageHandle.id);
     }
 
-    void beginRenderpass() noexcept {
-        VkRenderPassCreateInfo renderPassCreateInfo {
-            .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-            .pNext = nullptr,
-            .flags = 0,
-            .attachmentCount = 0,
-            .pAttachments = nullptr,
-            .subpassCount = 0,
-            .pSubpasses = nullptr,
-            .dependencyCount = 0,
-            .pDependencies = nullptr
-        };
-        VkRenderPass renderPass{};
-        VkResult result = vkCreateRenderPass(
-            vulkanDevice,
-            &renderPassCreateInfo,
-            nullptr,
-            &renderPass
-        );
-        if(result != VK_SUCCESS) {
-            logError("failed to create render pass");
-            return;
-        }
-
-        VkFramebufferCreateInfo framebufferCreateInfo {
-            .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-            .pNext = nullptr,
-            .flags = 0,
-            .renderPass = renderPass,
-            .attachmentCount = 0,
-            .pAttachments = nullptr,
-            .width = 800,
-            .height = 600,
-            .layers = 1
-        };
-        VkFramebuffer framebuffer{VK_NULL_HANDLE};
-
+    void beginRenderPass(VkRenderPass renderPass, VkFramebuffer framebuffer, VkExtent2D extent, VkClearValue clearValue) noexcept {
         VkRenderPassBeginInfo beginInfo {
             .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
             .pNext = nullptr,
             .renderPass = renderPass,
             .framebuffer = framebuffer,
-            .renderArea = VkRect2D{.offset = VkOffset2D{ 0, 0}, .extent = VkExtent2D{ 800, 600} },
-            .clearValueCount = 0,
-            .pClearValues = nullptr
+            .renderArea = VkRect2D{.offset = VkOffset2D{ 0, 0}, .extent = extent},
+            .clearValueCount = 1,
+            .pClearValues = &clearValue
         };
+
         VkSubpassContents contents{ VK_SUBPASS_CONTENTS_INLINE };
         vkCmdBeginRenderPass(
             buffer,
             &beginInfo,
             contents
         );
+    }
+
+    void endRenderPass() {
+        vkCmdEndRenderPass(buffer);
     }
 
 

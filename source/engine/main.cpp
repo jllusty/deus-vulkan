@@ -90,5 +90,12 @@ int main()
     // acquire swapchain
     context.AcquireSwapchain(surface.get());
 
+    while(!glfwWindowShouldClose(window.get())) {
+        glfwPollEvents();
+
+        // todo: on resize: reacquire swapchain
+        context.AcquireSubmitPresent();
+    }
+
     return 0;
 }

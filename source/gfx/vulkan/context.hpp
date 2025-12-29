@@ -63,6 +63,8 @@ class GpuContext {
     Allocator allocator;
     ResourceManager manager;
     Commander cmd;
+    SwapchainManager swapchain;
+    std::vector<VkSemaphore> submit;
 
 public:
     GpuContext(PhysicalDeviceHandle physicalDeviceHandle, core::log::Logger& log, const Configurator& config)
@@ -78,16 +80,50 @@ public:
             .vulkanApiVersion = VK_API_VERSION_1_0
         }, log),
         manager(config,allocator.get(),device.get(),log),
-        cmd(log, config, device.get(), manager)
+        cmd(log, config, device.get(), manager),
+        swapchain(log,config,physicalDeviceHandle,device.get())
     {}
 
     ~GpuContext() {}
 
-    // todo: should be moved to resource manager
-    void AcquireSwapchain(VkSurfaceKHR surface) {
-        SwapchainManager renderer(log,config,physicalDeviceHandle,device.get());
-        bool result = renderer.createSwapchain(0,surface);
-        result = renderer.recreateSwapchain(0,surface);
+    void AcquireSubmitPresent() noexcept {
+        cmd.awaitAndResetFrameFence();
+
+        // this needs to be cached only once (even between recreating the swapchain), as it is not
+        // the "signal" of the semaphore
+        // as such, it is perfectly safe to copy from our swapchain manager
+        VkSemaphore acquire = swapchain.getAcquireSemaphore();
+
+        uint32_t imageIndex = swapchain.acquireImage();
+        VkSemaphore submit = swapchain.getSubmitSemaphore(imageIndex);
+        logInfo("acquired swapchain index %d",imageIndex);
+
+        // this call should be moved into swapchain manager
+        VkClearColorValue clearColorValue {
+            .float32 = { 1.f, 0.f, 0.0f, 1.0f }
+        };
+        VkClearValue clearValue {
+            .color = clearColorValue,
+        };
+        cmd.begin();
+        cmd.beginRenderPass(
+            swapchain.getRenderPass(),
+            swapchain.getFramebuffers()[imageIndex],
+            swapchain.getExtent(),
+            clearValue
+        );
+        cmd.endRenderPass();
+
+        cmd.submitSwapchain(acquire, submit);
+        cmd.presentSwapchain(submit, swapchain.get(), imageIndex);
+    }
+
+    bool AcquireSwapchain(VkSurfaceKHR surface) {
+        return swapchain.createSwapchain(0,surface);
+    }
+
+    bool RecreateSwapchain(VkSurfaceKHR surface) {
+        return swapchain.recreateSwapchain(0,surface);
     }
 
     // fill an image with heightmap data
@@ -103,14 +139,17 @@ public:
 
         // note: how can we minimize total submits?
         // make heightmap image writeable
+        cmd.awaitAndResetFrameFence();
         cmd.begin();
         cmd.makeWriteable(*imageHandle);
         cmd.submit();
         // fill image from staging buffer
+        cmd.awaitAndResetFrameFence();
         cmd.begin();
         cmd.copy(*bufferToImgHandle, *imageHandle, heightResolution, heightResolution);
         cmd.submit();
         // make heightmap image readable from a shader
+        cmd.awaitAndResetFrameFence();
         cmd.begin();
         cmd.makeReadable(*imageHandle);
         cmd.submit();
@@ -123,11 +162,13 @@ public:
 
         // fill staging buffer, copy to X and Z vertex buffers storing our gridmesh
         bool fillResult = fillMemoryMappedBuffer(*bufferHandleSrc, gridMesh.vertexBufferX.data(), gridMesh.vertexCount);
+        cmd.awaitAndResetFrameFence();
         cmd.begin();
         cmd.copy(*bufferHandleSrc, *bufferHandleGridX);
         cmd.submit();
 
         fillResult = fillMemoryMappedBuffer(*bufferHandleSrc, gridMesh.vertexBufferZ.data(), gridMesh.vertexCount);
+        cmd.awaitAndResetFrameFence();
         cmd.begin();
         cmd.copy(*bufferHandleSrc, *bufferHandleGridZ);
         cmd.submit();
@@ -154,17 +195,17 @@ private:
     // log convenience
     template<typename... Args>
     void logError(const char* msg, Args... args) const noexcept {
-        log.error("vulkan/context", msg, std::forward<Args>(args)...);
+        log.error("gfx/vulkan/context", msg, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
     void logDebug(const char* msg, Args... args) const noexcept {
-        log.debug("vulkan/context", msg, std::forward<Args>(args)...);
+        log.debug("gfx/vulkan/context", msg, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
     void logInfo(const char* msg, Args... args) const noexcept {
-        log.info("vulkan/context", msg, std::forward<Args>(args)...);
+        log.info("gfx/vulkan/context", msg, std::forward<Args>(args)...);
     }
 
 };
