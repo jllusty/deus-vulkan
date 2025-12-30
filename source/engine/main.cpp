@@ -11,6 +11,7 @@
 #include "gfx/geometry/grid_mesh.hpp"
 
 #include "engine/world/chonker.hpp"
+#include "engine/world/camera.hpp"
 
 #include "gfx/vulkan/constants.hpp"
 #include "gfx/vulkan/config.hpp"
@@ -80,6 +81,9 @@ int main()
         log.info("main","waiting before loading heightmap into GPU...");
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
+
+    // create a camera
+    engine::world::Camera camera{};
 
     // copy read heads into a device-local vertex buffer
     context.CmdBuffers(chonker.fetch(playerChunk)->heights, CHUNK_RESOLUTION, gridMesh);
