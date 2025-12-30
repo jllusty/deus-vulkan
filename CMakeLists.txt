@@ -16,6 +16,8 @@ message(STATUS "GLFW3 CMake config dir: ${glfw3_DIR}")
 
 add_subdirectory(external/VulkanMemoryAllocator)
 
+add_subdirectory(external/glm)
+
 add_executable(VulkanApp
     source/engine/main.cpp
 )
@@ -92,7 +94,7 @@ target_link_libraries(VMAImpl
 )
 
 target_link_libraries(VulkanApp
-    PRIVATE Vulkan::Vulkan GPUOpen::VulkanMemoryAllocator VMAImpl glfw
+    PRIVATE Vulkan::Vulkan GPUOpen::VulkanMemoryAllocator VMAImpl glfw glm::glm
 )
 
 # silence hundreds of warnings from vulkan memory allocator
